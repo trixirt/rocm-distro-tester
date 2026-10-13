@@ -1,0 +1,35 @@
+# Python cache
+*.pyc
+__pycache__/
+*.pyo
+.pytest_cache/
+
+# Test results (can track versioned, but exclude intermediate files)
+ci-trigger/results/*.log
+ci-trigger/results/test_logs/
+
+# IDE and Editor Files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Container artifacts
+Dockerfile.fedora.built
+Dockerfile.ubuntu.built
+*/.dockerignore
+
+# Build outputs from tests
+pkg-tests/*/smoke_test_output/
+pkg-tests/*/_hipblas_build/
+
+# Environment files (.env.local, etc.)
+.env
+*.local
+
+# OS-specific ignore files
+.DS_Store
+Thumbs.db
+
+# Git - only include PLAN.md and HISTORY.md for now, not intermediate test outputs
+ci-trigger/results/*.jsonl

@@ -1,0 +1,32 @@
+# Template Dockerfile for ROCm Package Testing
+# Distro-specific variants (Dockerfile.fedora, Dockerfile.ubuntu) will override these base settings
+
+FROM fedora:rawhide
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL description="ROCm package smoke test container template"
+
+ENV TEST_NAME=hipblas-smoke
+ENV LOG_LEVEL=info
+
+# Common dependencies for all distros
+RUN dnf update -y && \
+    dnf install -y \
+        gcc-c++ \
+        git \
+        cmake \
+        ninja-build \
+        python3-pip \
+        libboost-devel \
+        && dnf clean all
+
+# ROCm dependencies will be loaded from package-config.yaml at runtime
+# Format: rocm-runtime, rocm-hip-devel, rocm-dev-packages
+
+WORKDIR /rocm-packages
+
+COPY smoketest.sh ${TEST_NAME}/
+COPY test-results/ /output/
+
+# Command executed by orchestrator
+CMD ["bash", "${TEST_NAME}/run-tests.sh"]

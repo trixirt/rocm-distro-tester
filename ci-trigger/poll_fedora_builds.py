@@ -191,10 +191,27 @@ def generate_package_matrix() -> List[Dict]:
 # MAIN EXECUTION
 # =============================================================================
 
+def get_parser():
+    """Get the argument parser for Fedora build polling."""
+    parser = argparse.ArgumentParser(
+        prog='poll_fedora_builds.py',
+        description='Poll Fedora Koji for ROCm package builds',
+        epilog='Example: python3 poll_fedora_builds.py --package hipblas'
+    )
+    parser.add_argument('-p', '--package', type=str, help='Specific package to check')
+    parser.add_argument('-l', '--list-packages', action='store_true', help='List all tracked packages')
+    parser.add_argument('-a', '--all', action='store_true', help='Check all packages (default)')
+    parser.add_argument('-f', '--file', type=str, default=None, help='State file path')
+    parser.add_argument('-r', '--reset', '--force-reset', action='store_true', dest='force_reset', help='Reset build tracking state')
+    return parser
+
 def main():
-    """Main entry point for package build tracking and test triggering."""
-    parser = argparseParser()
-    args = parser.parse_args()
+    """Main entry point for package build tracking and test triggering.
+    
+    This script monitors Fedora Koji for ROCm package updates and can trigger
+    automated testing when new builds are detected.
+    """
+    args = get_parser().parse_args()
     
     # Initialize paths
     state_file = args.file or DEFAULT_STATE_FILE

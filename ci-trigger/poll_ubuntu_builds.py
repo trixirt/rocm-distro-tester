@@ -293,7 +293,7 @@ def main():
         type=str,
         default='latest',
         choices=['latest', 'lts', 'focal', 'jammy', 'noble', 'oracular'],
-        help='Ubuntu release version to check (default: oracular)'
+        help='Ubuntu release version to check (default: latest)'
     )
     
     args = parser.parse_args()

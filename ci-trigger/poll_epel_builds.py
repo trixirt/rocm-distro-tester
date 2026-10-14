@@ -249,8 +249,7 @@ def main():
     parser.add_argument(
         '--file', '-f', 
         type=Path, 
-        default=DEFAULT_STATE_FILE,
-        help=f'State file location (default: {DEFAULT_STATE_FILE})'
+        help='State file path'
     )
     parser.add_argument(
         '--version', '-v',

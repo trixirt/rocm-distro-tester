@@ -4,6 +4,10 @@
 
 ---
 
+*AI development: pi-coding-agent Fedora package with Ollama Qwen3.5:35b backend, running on AMD Radeon Pro W7900*
+
+---
+
 ## Quick Start
 
 ### Prerequisites

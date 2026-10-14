@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Test Results Dashboard - Overview{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h3>📊 Test Results Overview</h3>
+        <p class="text-muted">Last updated: {{ now.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="stat-card bg-primary text-white">
+            <h5>Total Tests</h5>
+            <h2>{{ stats.total_tests }}</h2>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="stat-card bg-success text-white">
+            <h5>Passed</h5>
+            <h2>{{ stats.passed }}</h2>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="stat-card bg-danger text-white">
+            <h5>Failed</h5>
+            <h2>{{ stats.failed }}</h2>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="stat-card bg-info text-white">
+            <h5>Pass Rate</h5>
+            <h2>{{ stats.pass_rate }}%</h2>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h4>Test Results by Distro (<strong>Overall {{ "%0.0f"|format(stats.pass_rate) }}% success rate</strong>)</h4>
+        <canvas id="distroChart"></canvas>
+    </div>
+    <div class="col-md-6">
+        <h4>Test Results by Package (filtered on all distros)</h4>
+        <select class="form-select form-select-sm mb-3" onchange="location.href = '/results?package=' + this.value">
+            <option value="">All Distros</option>
+            {% for pkg in packages %}
+                <option>{{ pkg }}</option>
+            {% endfor %}
+        </select>
+        <canvas id="packageChart"></canvas>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <h4>Recent Test Results (Last 7 days)</h4>
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    <th>Date/Time</th>
+                    <th>Distro</th>
+                    <th>Package</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result in stats.distro_breakdown.items() %}
+                <tr>
+                    <td>{{ now.strftime('%Y-%m-%d') }}</td>
+                    <td><strong>{{ result[0] }}</strong></td>
+                    <td>-</td>
+                    <td><span class="badge {% if result[1].passed == 0 %}bg-danger{% else %} bg-success {% endif %}">
+                        {{ (result[1].passed / (result[1].total or 0) * 100)|int }}% success
+                    </span>
+                    </td>
+                    <td>-</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Initialize charts with data from template variables
+const distroData = {{ stats.distro_breakdown|tojson }};
+const packageData = [{% for pkg in packages %}{{ {"name": pkg, "count": 1}|tojson }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+// Distro performance chart (pie chart)
+new Chart(document.getElementById('distroChart'), {
+    type: 'pie',
+    data: {
+        labels: Object.keys(distroData),
+        datasets: [{
+            data: Object.values(distroData).map(d => ({ total: d.total, passed: d.passed })),
+            backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#dc3545']
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } }
+    }
+});
+
+// Package coverage chart (horizontal bar)
+new Chart(document.getElementById('packageChart'), {
+    type: 'bar',
+    data: {
+        labels: packageData.map(d => d.name),
+        datasets: [{
+            label: 'Tests by Package',
+            data: packageData.map(d => d.count || 0),
+            backgroundColor: '#37b4f5',
+            borderRadius: 4
+        }]
+    },
+    options: { indexAxis: 'y', responsive: true }
+});
+
+// Clickable links to filter results page on chart hover
+document.getElementById('distroChart').addEventListener('click', (e) => {
+    const element = e.elements[0];
+    if(element && element.index !== undefined) {
+        const distroLabel = document.getElementById('distroChart')['config'].data.labels[element.index];
+        window.location.href = `/results?distro=${encodeURIComponent(distroLabel)}`;
+    }
+});
+
+// Hover tooltips with detailed stats
+Chart.helpers.each(document.getElementById('distroChart').chart.data.datasets, (dataset) => {
+    ['tooltip', 'interaction'], function() { /* Customize if needed */ }
+});
+
+</script>
+{% endblock %}

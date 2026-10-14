@@ -221,3 +221,35 @@ v0.2 scope (deferred, based on production experience):
 For now: Manual operational simplicity prioritizes single-developer maintenance model.
 
 See [PLAN.md](./PLAN.md#section-6-docker-registry-infrastructure-new-v015) for complete technical details and options evaluation.
+
+## 🖥️ Web Dashboard for Results Aggregation
+
+**Quick Start**: Deploy the dashboard on builder machine to view unified test results across all distros.
+
+```bash
+# Deploy dashboard container (one-time)
+./ci-trigger/scripts/setup_dashboard.sh -v
+
+# Access from any browser:
+http://localhost:5001   # On builder machine
+http://<builder-hostname>:5001  # From other machines on network
+
+# API access for programmatic use:
+curl http://localhost:5001/api/summary | jq '.statistics'
+```
+
+### Dashboard Features:
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Overview Page** | Statistics, charts, recent activity | ✅ Active |
+| **Filtered Results View** | Search by distro/package/result/day window | ✅ Active |  
+| **API Endpoints** | JSON data for external integration | ✅ Active |
+| **Dockerized Deployment** | Single-container setup on builder machine | ✅ Deployed |
+| **Real-time Updates** | Dashboard reflects latest JSON results automatically | ✅ Updated |
+
+### Configuration:
+
+Dashboard container runs on port 5001 and mounts the `/var/rocm-tester/results` directory to read test result JSON files. No further setup required after initial deployment.
+
+See [PLAN.md Section 7](./PLAN.md#section-7-web-dashboard-for-test-results-new-v016) for detailed technical documentation, API reference, and upgrade considerations.

@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: ci-trigger/docker/Dockerfile.dashboard
+    container_name: rocm-dashboard
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    volumes:
+      # Mount the results directory from builder machine
+      - /var/rocm-tester/results:/var/rocm-tester/results
+      # Local directory mapping for development convenience
+      - ./ci-trigger/dashboard:/app
+    environment:
+      - RESULTS_DIR=/var/rocm-tester/results
+      - FLASK_DEBUG=1  # Useful for local dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/summary"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  default:
+    driver: bridge

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Test Results - {{ distro_filter or 'All' }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div>
+        <h4>📝 All Test Results</h4>
+        <p class="text-muted">Showing filtered results for {{ current_days }} days</p>
+    </div>
+    
+    <!-- Filter controls -->
+    <form method="get" class="d-flex gap-2 ms-auto">
+        <select name="distro" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+            <option value="" {% if not distro_filter %}selected{% endif %}>All Distros</option>
+            {% set package_names = packages %}
+            {% for d in stats.distro_breakdown if d != 'unknown' or d in ['fedora', 'ubuntu', 'rhel'] %}{{ d }}{% endfor %}
+        </select>
+        
+        <input type="text" name="package" class="form-control form-control-sm" placeholder="Package Filter" value="{{ package_filter }}">
+        
+        <select name="result" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+            <option value="">All Results</option>
+            <option value="PASSED" {% if result_filter == 'PASSED' %}selected{% endif %}>Passed</option>
+            <option value="FAILED" {% if result_filter == 'FAILED' %}selected{% endif %}>Failed</option>
+        </select>
+        
+        <select name="days" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+            <option value="1" {% if current_days == 1 %}selected{% endif %}>Last day</option>
+            <option value="3" {% if current_days == 3 %}selected{% endif %}>Last 3 days</option>
+            <option value="7" {% if current_days == 7 %}selected{% endif %}>Last 7 days</option>
+            <option value="14" {% if current_days == 14 %}selected{% endif %}>Last 14 days</option>
+        </select>
+    </form>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h6 class="mb-0 filter-results">Filtered Results Summary:</h6>
+        {% set total_results = results | length %}
+        {% set passed_results = results | selectattr('status', 'equalto', 'PASSED') | list | length %}
+        <span class="badge bg-success">{{ passed_results }}/{{ total_results }} tests passed</span>
+        {% if total_results == 0 %}<span class="text-muted">No test results found for current filters</span>{% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Test Details ({{ total_results }} records)</h5>
+        
+        <!-- Export buttons -->
+        <button class="btn btn-sm btn-outline-secondary" onclick="window.location.href='/api/latest-results/{{ results|length }}'">
+            📋 Export JSON
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>Date/Time</th>
+                    <th>Distro</th>
+                    <th>Package</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result in results %}
+                <tr class="{% if result.status == 'PASSED' %}table-success{% elif result.status == 'FAILED' %}table-danger{% else %}table-secondary{% endif %}">
+                    <td><small>{{ (result.timestamp or now.strftime('%Y-%m-%d'))[:19] }}</small></td>
+                    <td><strong>{{ result.distro }}</strong></td>
+                    <td>{{ result.package_name or 'Unknown' }}</td>
+                    <td>
+                        <span class="badge {% if result.status == 'PASSED' %}bg-success{% elif result.status == 'FAILED' %}bg-danger{% else %}bg-secondary{% endif %}">
+                            {{ result.status }}
+                        </span>
+                    </td>
+                    <td>{{ (result.execution_time_seconds or 0) / 60|round(1) }} min</td>
+                    <td>
+                        {% if component.component_name and results[0].component %}
+                        <span class="text-muted small">Component: {{ component.component_name }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body bg-light">
+        <h6 class="mb-0 text-muted small">Results are ordered by timestamp (newest first). Click "Export JSON" to download raw data.</h6>
+    </div>
+</div>
+
+<div class="mt-4 text-center text-muted" id="timestamp-info">
+    Last updated: {{ now.strftime('%Y-%m-%d %H:%M:%S') }} | Refreshing in real-time with latest available results from JSON files.
+</div>
+{% endblock %}

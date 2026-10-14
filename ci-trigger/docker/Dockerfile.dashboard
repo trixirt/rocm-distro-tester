@@ -1,0 +1,36 @@
+# =============================================================================
+# ROCm-Tester: Test Results Dashboard Container (v0.1)
+# Flask web application hosted on builder machine for distributed test result display
+# Optimized for single-deploy, multi-test-node results aggregation and visualization
+# =============================================================================
+
+FROM python:3.11-slim-bookworm
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL description="Test Results Dashboard for ROCm-Tester project"
+LABEL version="0.1.5"
+LABEL org.opencontainers.image.source = "https://github.com/rocm-tester/rocm-tester"
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home appuser
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ci-trigger/dashboard/ ./dashboard/
+
+USER appuser
+
+EXPOSE 5001
+
+# Health check to verify the dashboard is operational
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5001/api/summary || exit 1
+
+CMD ["python", "dashboard/app.py", "--port", "5001"]

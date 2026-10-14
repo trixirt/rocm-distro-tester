@@ -1,0 +1,88 @@
+# =============================================================================  
+# ROCm-Tester HIPBLAS Comprehensive Test Container (Ubuntu Variant)
+# UPDATED v0.1.2 - Includes full unit testing matching Fedora implementation
+# =============================================================================
+# Base Image: Ubuntu latest development release (rolling equivalent to Fedora Rawhide/Arch)
+# Purpose: Run comprehensive HIPBLAS testing - smoke + unit tests on AMD GPU hardware
+# This matches the Fedora test architecture for consistency across distros
+# =============================================================================
+
+FROM ubuntu:latest  # Latest dev image = rolling-like behavior similar to Arch/Fedora Rawhide
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL description="HIPBLAS smoke+unit test container - Ubuntu latest variant"
+LABEL version="0.1.2"
+LABEL org.opencontainers.image.title="hipblas-smoke-unit-tests-ubuntu"
+
+# Set environment variables for test configuration (consistent with Fedora)
+ENV TEST_NAME=hipblas-comprehensive-tests
+ENV LOG_LEVEL=info  
+ENV HIPBLAS_TEST_TIMEOUT="3600"
+ENV ROCM_PATH="/opt/rocm"
+
+# =============================================================================
+# BASE TOOL INSTALLATION (Ubuntu-specific packages)
+# =============================================================================
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        g++ \
+        git \
+        cmake \
+        ninja-build \
+        pkg-config \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# ROCm DEPENDENCY INSTALLATION (Ubuntu-specific package names)  
+# Using standard Ubuntu apt repositories for HIPBLAS and related libraries
+# =============================================================================
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        hipblas-dev \
+        rocblas-dev \
+        rocsolver-dev \
+        libhipblas3-tests \
+        ocl-icd-opencl-dev \
+        hip-runtime-amd \
+        rocm-core \
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# HIPBLAS SOURCE COPY FOR UNIT TESTS  
+# Clone from official git repository for source access
+# =============================================================================
+
+RUN git clone --depth 1 https://git.launchpad.net/hipblas hipblas-source 2>/dev/null || \
+    mkdir -p /opt/hipblas-rpm && \
+    cp /rocm-packages-tester/../hipblas-tests/*.cpp /opt/hipblas-rpm/test.cpp 2>/dev/null || true
+
+WORKDIR /opt/hipblas-rpm
+
+# Prepare compilation environment for unit tests
+ENV CXX=hipcc
+ENV HIP_PATH=/opt/rocm
+ENV LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
+
+# =============================================================================
+# COPY COMPREHENSIVE TEST EXECUTION SCRIPTS
+# =============================================================================
+
+COPY ../hipblas-tests/comprehensive-smoketests.sh /opt/smoketests/run_comprehensive_tests.sh
+COPY ../hipblas-tests/hipblas-test-compile.sh /opt/smoketests/compile_and_run_unit_tests.sh 
+
+RUN chmod +x /opt/smoketests/*.sh
+
+# =============================================================================
+# DEFAULT COMMAND - RUN COMPREHENSIVE TESTS (SMOKE+UNIT) ON GPU
+# Identical execution flow to Fedora for consistency
+# =============================================================================
+
+WORKDIR /rocm-packages-tester
+CMD ["/opt/smoketests/run_comprehensive_tests.sh"]
+
+# Run with: docker run --rm --device=/dev/kfd rocmtester/hipblas-ubuntu

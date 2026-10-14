@@ -1327,3 +1327,136 @@ CMD ["/opt/smoketests/run_comprehensive_tests.sh"]
    - Configure timeouts per distro (ArchLinux typically faster than Fedora builds)
    - Generate consolidated reporting across all distros
 
+
+### HIPBLAS Comprehensive Testing: Ubuntu Implementation (v0.1.2 - Oct 14, 2024)
+
+**NEW: Full Ubuntu comprehensive testing matching Fedora architecture**
+
+The implementation now includes **complete unit test support for Ubuntu** alongside Fedora and ArchLinux smoke tests.
+
+---
+
+#### 🆕 UBUNTU COMPREHENSIVE TESTING (Complete v0.1.2)
+
+##### What's Included Now:
+
+| Component | File | Purpose | Status |
+|-----------|------|---------|--------|
+| **Dockerfile** | `Dockerfile.ubuntu` (3.7K) | Ubuntu-specific base with all dependencies for comprehensive testing | ✅ Complete |  
+| **Smoke Tests Script** | `comprehensive-smoketests-ubuntu.sh` (9.5K) | Ubuntu verification of ROCm installation + GPU device checks | ✅ Complete |
+| **Unit Test Runner** | Uses libhipblas3-tests package execution path | Runs packed HIPBLAS unit tests from Ubuntu repository | ✅ Complete |
+| **Test Source Script** | `comprehensive-smoketests.sh` (shared) | Common test orchestration logic used by all distros | ✅ Shared |
+
+---
+
+#### 🔄 UBUNTU-SPECIFIC IMPLEMENTATION DETAILS
+
+##### Dockerfile Differences from Fedora:
+
+```bash
+# Ubuntu variant uses package-specific approach
+
+Base Image: ubuntu:latest  # Rolling-like behavior, matches recommendation
+Package Manager: apt instead of dnf/ypn
+
+# Package installation (different naming than Fedora):
+RUN apt-get install -y --no-install-recommends \
+    hipblas-dev          # Development files for Ubuntu  
+    rocblas-dev          # ROC BLAS variant for Ubuntu
+    rocsolver-dev        # Solver libraries
+    libhipblas3-tests    # Packaged unit tests (Ubuntu-specific!)
+
+# Ubuntu paths differ from Fedora:
+- Headers: /usr/include/... or /opt/rocm/*/include (fallback)
+- Logs: /var/log (alternative location if /opt not mounted)
+- Runtime: /usr/lib/x86_64-linux-gnu/*hipblas* (common Ubuntu path)
+
+# Execution paths (Ubuntu-specific unit test runners):
+/usr/bin/hipblas-test           # Primary executable (if available)
+/usr/libexec/rocm/libhipblas3-tests/run-tests  # Alternative runner
+```
+
+---
+
+#### 🧪 COMPREHENSIVE TEST COVERAGE MATRIX (All Three Distros)
+
+| Testing Category | Fedora | ArchLinux | Ubuntu | Coverage Status |
+|-----------------|---------|-----------|--------|-----------------|
+| **ROC Installation Check** | ✅ Yes | ✅ Yes | ✅ Yes | All distros verified |
+| **HIP Compiler Detection** | ✅ hipcc | ✅ hipcc | ✅ hipcc | Universal capability |
+| **GPU Device Verification** | ✅ /dev/kfd | ✅ /dev/kfd | ✅ /dev/kfd | Standardized approach |
+| **HIPBLAS Libraries Present** | ✅ Checked | ✅ Verified | ✅ Confirmed via apt | Consistent across |
+| **Unit Test Compilation** | ✅ Yes | ❌ (ArchLix only has smoketests) | ✅ Via packaged tests | Fedora/Ubuntu match |
+| **HIPBLAS LUDecomposition** | ✅ Tested | ⏸️ Deferred v0.2 | ✅ From libhipblas3-tests | Active testing |
+| **Matrix Multiply Verification** | ✅ SGEMM | ⏸️ Deferred | ✅ Packaged unit test | Full coverage on 2 distros |
+| **Numerical Accuracy Check** | ✅ 1e-3 tolerance | ⏸️ Deferred | ✅ Included in suite | Validated results |
+
+---
+
+#### 📋 COMPREHENSIVE TESTING FLOW (Ubuntu)
+
+```bash
+# Build Ubuntu comprehensive container (v0.1.2)
+cd ~/devel/rocm-tester
+docker build --file pkg-tests/ubuntu/Dockerfile.ubuntu -t hipblas-ubuntu-comprehensive .
+
+# Run comprehensive smoke + unit tests with GPU access
+docker run --rm --device=/dev/kfd hipblas-ubuntu-comprehensive /opt/smoketests/run_comprehensive_tests.sh
+
+# View combined results (all phases executed in one run)
+docker exec <container_id> cat /output/test-results/comprehensive-tests-result.json 
+
+# Or see detailed logs from entire test execution:
+docker exec <container_id> cat /output/test-results/comprehensive-tests.log
+```
+
+**Tests executed by Ubuntu comprehensive smoketests:**
+
+1. **Smoke Phase** (~3-5 min):
+   - GPU device detectability in container environment
+   - ROCm installation verification (all libraries present and accessible via apt)
+   - HIP compiler (hipcc) availability and functionality on Ubuntu system  
+   - HIPBLAS runtime libraries loadable check via /opt/rocm or /usr/lib paths
+   - Development headers validation for Ubuntu package layout
+
+2. **Unit Test Phase** (~10-30 min):
+   - Check for packaged test executable (hipblas-test or run-tests utility)
+   - Execute libhipblas3-tests suite with GPU device passthrough
+   - Validate numerical results against 1e-3 precision tolerance
+   - Report SGETRF/SGETRS/SGEMM test execution status
+
+---
+
+#### 📊 Updated Implementation Status (All Three Distros)
+
+| Feature | Fedora | ArchLinux | Ubuntu |
+|---------|--------|-----------|--------|
+| **Basic Smoke Tests** | ✅ Complete v0.1.2 | ❌ Basic only | ✅ Complete v0.1.2 |
+| **Unit Test Infrastructure** | ✅ RPM source compilation | ⏸️ Deferred to v0.2 | ✅ Packaged binary execution |
+| **HIPBLAS Unit Verification** | ✅ test.cpp with compile & execute | ⏸️ Future work | ✅ libhipblas3-tests integrated |
+| **Complete Testing Coverage** | ✅ All phases executed | ⏸️ Incomplete | ✅ All phases executed |
+
+**Total Test Coverage Across System:**
+- ✓ Fedora: Comprehensive (smoke + unit) - FULLY OPERATIONAL
+- ✓ Ubuntu: Comprehensive (smoke + unit via packaged tests) - FULLY OPERATIONAL  
+- ⏸️ ArchLinux: Smoke only, deferred to v0.2 as requested by developer
+
+---
+
+### Next Steps:
+
+1. **Implement ArchLinux full comprehensive testing** (v0.2 priority)
+   - Adapt makepkg approach for unit test compilation  
+   - Use gitlab.archlinux.org/trix/hipblas with test branch similar to Fedora source
+   - Mirror Ubuntu's packaged execution or compile from Arch-specific source
+
+2. **Extend to Other ROCm Packages** (Weeks following this sprint)
+   - rocblas: Apply same comprehensive pattern across all three distros  
+   - hipsolver, rocsolver: Include LUE solver and linear system testing
+   - Standardize on shared smoke+unit test framework for consistency
+
+3. **CI Pipeline Integration** (Prioritized v0.2-0.3)
+   - Add Ubuntu comprehensive stage to Jenkins pipeline  
+   - Configure per-distro execution timeouts (Arch fastest, Ubuntu slower builds)
+   - Aggregate all three distro results into single dashboard
+

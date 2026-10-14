@@ -1166,3 +1166,164 @@ docker run --rm --device=/dev/kfd rocmtester/hipblas-archlinux \
    - Push container images to shared repository
    - Test node distribution across GPU machines
 
+
+### HIPBLAS Comprehensive Tests Updated (v0.1.2 - Oct 14, 2024)
+
+**NEW: Full Unit Test Integration for Fedora HIPBLAS Smoke Tests**
+
+The `hipblas/smoke` implementation has been significantly enhanced to include comprehensive testing that goes beyond basic smoke tests.
+
+---
+
+#### 🆕 COMPREHENSIVE TEST APPROACH (Fedora - Complete)
+
+**Before v0.1.0**: Basic ROCm/HIPBLAS library presence checks only  
+**After v0.1.2**: Full HIPBLAS unit test compilation + execution from Fedora RPM source
+
+##### What's Included Now:
+
+| Component | File | Purpose | Status |
+|-----------|------|---------|--------|
+| **Smoke Tests Script** | `comprehensive-smoketests.sh` (8.3K) | Verifies all ROCm installation components, GPU device access, HIP compiler availability | ✅ Complete |
+| **Unit Test Compiler** | `hipblas-test-compile.sh` (4.4K) | Compiles test.cpp with hipcc, links ROCm libraries, executes on GPU | ✅ Complete |
+| **HIPBLAS Unit Test Source** | `test.cpp` (2.2K) | Actual HIP BLAS unit tests from Fedora RPM source (SGETRF, SGETRS, SGEMM) | ✅ Copied from source |
+
+---
+
+#### 🧪 TEST COVERAGE BREAKDOWN
+
+```
+comprehensive-smoketests.sh execution flow:
+
+Phase 1: SMOKE TESTS
+├── GPU device availability verification (/dev/kfd)  
+├── rocminfo GPU enumeration (AMD detection)
+├── HIP compiler (hipcc) presence check
+├── HIPBLAS library files in /opt/rocm/lib
+├── Development headers existence validation
+└── ROCBLAS dependency check
+
+Phase 2: UNIT TESTS  
+├── Source code retrieval from Fedora RPM repository
+├── Compilation with hipcc compiler
+├── Link against: libhipblas, librocblas, libhipsolver, libhsa-runtime64
+├── GPU execution (SGETRF decomposition test)
+├── GPU execution (SGETRS linear solver)
+├── GPU execution (SGEMM matrix multiply verification)
+└── Numerical tolerance validation (1e-3 precision check)
+
+Phase 3: REPORTING
+├── JSON result aggregation with both smoke and unit test results
+├── Detailed log files for debugging failures
+└── Execution time tracking per phase
+```
+
+---
+
+#### 📋 Test File Structure Update
+
+**NEW FILES CREATED:**
+```bash
+pkg-tests/hipblas/hipblas-tests/
+├── comprehensive-smoketests.sh          # Main orchestration script (8.3K)
+├── hipblas-test-compile.sh              # Unit test compilation runner (4.4K)  
+└── test.cpp                             # HIPBLAS unit tests from Fedora source (2.2K)
+
+pkg-tests/hipblas/Dockerfile.fedora      # UPDATED to include comprehensive testing
+pkg-tests/hipblas/package-config.yaml    # UPDATED with full coverage documentation
+```
+
+---
+
+#### 🔄 Updated Dockerfile Flow for Fedora (v0.1.1+)
+
+```dockerfile
+FROM fedora:rawhide  # Base image, unchanged
+
+# ... [same base dependency installation as before]
+
+RUN git clone --depth 1 https://src.fedoraproject.org/rpms/hipblas.git \
+    /opt/hipblas-rpm
+
+COPY hipblas-tests/comprehensive-smoketests.sh /opt/smoketests/run_comprehensive_tests.sh
+COPY hipblas-tests/hipblas-test-compile.sh /opt/smoketests/compile_and_run_unit_tests.sh
+
+CMD ["/opt/smoketests/run_comprehensive_tests.sh"]
+```
+
+**Key Changes:**
+1. Git repository cloned for unit test source acquisition
+2. Two test execution scripts added (smoke + comprehensive)
+3. Comprehensive script orchestrates both test phases together
+4. All results aggregated into single JSON output file
+
+---
+
+#### 🎯 Test Execution Results Format
+
+```json
+{
+  "test_suite": "hipblas-comprehensive-tests",
+  "distro": "fedora-rawhide", 
+  "version": "0.1.1",
+  "status": "PASSED/FAILED",
+  "execution_time_seconds": 1847,
+  "timestamp": "2024-10-14T15:30:45-06:00",
+  "components_tested": {
+    "smoke_tests": {
+      "gpu_check": true,
+      "hipcc_available": true, 
+      "rocminfo_available": true,
+      "hipblas_libraries_check": true,
+      "headers_installed_check": true
+    },
+    "unit_tests": {
+      "test_source_path": "/opt/hipblas-rpm/test.cpp",
+      "compilation_status": "SUCCESS/FAILED",
+      "test_executable_created": true,
+      "execution_result": "PASSED/FAILED/TIMEOUT"
+    }
+  }
+}
+```
+
+---
+
+#### 📊 Updated Testing Capability Summary (Fedora)
+
+| Test Category | Before v0.1.1 | After v0.1.2 | Change |
+|--------------|---------------|--------------|--------|
+| **ROCm Installation Check** | ✅ Basic | ✅ Basic | Unchanged |
+| **HIP Compiler Detection** | ✅ Yes | ✅ Yes | Unchanged |  
+| **GPU Device Access** | ✅ Verification only | ✅ Full check | Enhanced logging |
+| **Library File Presence** | ✅ Checked present | ✅ Verified loadable | More detailed checks |
+| **Unit Test Compilation** | ❌ Not included | ✅ Added v0.1.2 | NEW! |
+| **Unit Test Execution** | ❌ Not included | ✅ Added v0.1.2 | NEW! |
+| **SGETLU Decomposition Test** | ❌ N/A | ✅ Included | NEW! |
+| **SGEMM Matrix Multiply** | ❌ N/A | ✅ Included | NEW! |
+| **Numerical Accuracy Check** | ❌ N/A | ✅ 1e-3 tolerance | NEW! |
+
+---
+
+### Next Steps for Comprehensive Testing Expansion:
+
+1. **Implement ArchLinux Complementary Tests** (Weekend/Next sprint)
+   - Mirror Fedora comprehensive test approach
+   - Use gitlab.archlinux.org/trix/hipblas source with test branch
+   - Adapt makepkg process for unit test compilation in containerized environment
+
+2. **Create Ubuntu Comprehensive Test Suite** (Upcoming v0.2)
+   - Match testing pattern established for Fedora
+   - Use apt package management for lib installation
+   - Clone from git.launchpad.net/hipblas as reference source
+
+3. **Extend to Other ROCm Packages**
+   - rocblas: Similar test compilation + execution approach  
+   - hipsolver, rocsolver: SGETRF and linear solve unit tests
+   - All packages: Consistent smoke+unit testing methodology
+
+4. **CI Pipeline Integration** (Following v0.1.3)
+   - Add comprehensive test stage to Jenkins pipeline
+   - Configure timeouts per distro (ArchLinux typically faster than Fedora builds)
+   - Generate consolidated reporting across all distros
+

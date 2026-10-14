@@ -519,3 +519,317 @@ python3 -m pytest ci-trigger/tests -k "test_package_mapping" -v
 | test_poll_fedora_builds.py | ~350 | Full coverage for Fedora poller |
 | test_poll_archlinux_builds.py | ~280 | Full coverage for ArchLinux poller |
 
+
+### Container Builds & Deployment Architecture (Section 5 - NEW v0.1)
+
+**Status**: Currently in initial implementation phase. Core infrastructure documented but minimal actual implementations exist yet.
+
+---
+
+#### 📋 Current State Summary
+
+| Component | Files Present | Implementation Status |
+|-----------|---------------|---------------------|
+| **Container Template** | `Dockerfile.template` (hipblas) | ✅ Base template exists |
+| **Per-Distro Dockerfiles** | None | ❌ Missing entirely |
+| **Package Configurations** | None | ❌ Missing entirely |
+| **Central Build System** | Not implemented | ❌ No build orchestrator yet |
+| **Container Registry** | Not implemented | ❌ No shared registry exists |
+
+---
+
+#### 🏗️ Container Architecture Design
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    CENTRAL BUILD ORCHESTRATOR                        │
+│                         (Jenkins/Ansible)                           │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────┐    │
+│  │  Build Pipeline per Package                                │    │
+│  │  ├─ Read package-config.yaml                              │    │
+│  │  ├─ Generate Dockerfile.fedora                            │    │
+│  │  ├─ Generate Dockerfile.ubuntu                            │    │
+│  │  └─ Build & Tag: rocmtester/{package}-{distro}:latest     │    │
+│  └────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│                         ↓ (pushed images)                           │
+│                                                              ┌──────────────────┐
+│                                                      ┌─────│   Shared       │
+│                                              ┌────│   │   local registry│
+│                                              │   │   (Docker daemon) │
+│                                              │   │   mounted in     │
+│                                              │   │   Jenkins master)|
+│                                              │   └──────────────────┘
+│                                             ↓
+│                            ┌─────────────────┐
+│                            │ Test Matrix     │
+│                            │ (Jenkins Pipeline)
+│                            │ - Fetch images  │
+│                            │ - Run on GPU nodes
+│                            │ - Aggregate logs│
+│                            └─────────────────┘
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+                         ↓ Deployment Path ↓
+          ┌────────────────────────────────────────────────────────────┐
+          │  GPU Nodes (Ubuntu/Fedora/OpenSUSE)                        │
+          │   - Pull pre-built test containers from local registry     │
+          │   - Mount GPU devices: --device=/dev/kfd                   │
+          │   - Run smoke tests with mounted log directories           │
+          └────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 📦 Container Files Needed (Critical Missing Items)
+
+##### **1. Distro-Specific Dockerfiles** (per package)
+
+Each ROCm package requires two base images for testing:
+
+| Package | Needed Dockerfile Files | Purpose |
+|---------|------------------------|---------|
+| hipblas | `pkg-tests/hipblas/Dockerfile.fedora`  | Test container for Fedora rawhide |
+|         | `pkg-tests/hipblas/Dockerfile.ubuntu` | Test container for Ubuntu jammy |
+| rocblas | `pkg-tests/rocblas/Dockerfile.fedora`  | ROCm BLAS testing on Fedora |
+|         | `pkg-tests/rocblas/Dockerfile.ubuntu` | ROCm BLAS testing on Ubuntu |
+| hipfft  | `pkg-tests/hipfft/Dockerfile.fedora` | FFT library test container Fed |
+|         | `pkg-tests/hipfft/Dockerfile.ubuntu` | FFT library test container Ubt |
+| hipsolver | `*.*` similar variants... | ROCm solver testing |
+| (All 89 packages) | **(×178 files total)** | Complete matrix coverage |
+
+**Key Distinctions Between Distro Dockerfiles:**
+```dockerfile
+# Fedora variant uses:
+FROM fedora:rawhide
+RUN dnf install -y rocm-hip-devel hipblas-devel ...
+
+# Ubuntu variant uses:
+FROM ubuntu:jammy  
+RUN apt-get install -y hipblas-dev rocblas-dev ...
+```
+
+---
+
+##### **2. Package Configuration Files** (per package)
+
+```yaml
+# Example: pkg-tests/hipblas/package-config.yaml (NEEDS CREATION)
+package_name: hipblas
+test_type: smoke-tests
+
+distro_configs:
+  fedora:
+    base_image: "fedora:rawhide"
+    package_manager: "dnf"
+    rocm_packages:
+      - "hipblas-devel"
+      - "rocblas-devel" 
+      - "rocm-common"
+      - "rocm-opencl-runtime"
+    test_files:
+      smoke_test_path: "/test/hipblas-smoke.bin"
+      
+  ubuntu:
+    base_image: "ubuntu:jammy"
+    package_manager: "apt"
+    rocm_packages:
+      - "libhipblas-dev"
+      - "rocblas-dev"
+      - "rocsolver-dev"
+      - "opencl-icd-loader"
+    test_files:
+      smoke_test_path: "/test/libhipblas-test"
+
+build_args:
+  TARGET_DISTRO: "auto-detected from config"
+  GPU_ARCH: "gfx908,gfx941"
+
+test_environment:
+  timeout_minutes: 60
+  gpu_requirements:
+    devices: ["/dev/kfd"] 
+    memory_gb: 8
+```
+
+---
+
+##### **3. Automated Dockerfile Generation System**
+
+Currently no system exists to auto-generate distro-specific Dockerfiles from templates and configs:
+
+**Required Components:**
+1. **Template Engine Script** (`scripts/generate-dockerfiles.py`)
+   - Reads `package-config.yaml` 
+   - Applies base templates with distro-specific substitutions
+   - Outputs: `Dockerfile.{distro}` for each package
+
+2. **Build Orchestrator** (to be added to Jenkins pipeline)
+   ```groovy
+   // Pseudo-Jenkins pipeline step
+   stage('Build Test Containers') {
+     parallel {
+       stage('HIPBLAS Fedora') { 
+         sh 'scripts/build-test-image.sh hipblas fedora'
+       }
+       stage("HIPBLAS Ubuntu") { 
+         sh 'scripts/build-test-image.sh hipblas ubuntu'
+       }
+     }
+   }
+   ```
+
+3. **Docker Registry Management** (local self-hosted registry)
+   - On controller machine: Docker daemon or container registry
+   - Or push to external Docker Hub private org
+   - Tags: `rocmtester/hipblas-fedora:latest`
+
+---
+
+#### 🔄 Complete Build & Deployment Workflow
+
+```mermaid
+graph TB
+    A[Package Config Load] --> B{Dockerfile Generation}
+    B -->|Fedora| C[dnf installs ROCm libs]
+    B -->|Ubuntu| D[apt installs CUDA deps]
+    
+    C --> E[Fedora Build Context]
+    D --> F[Ubuntu Build Context]
+    
+    E --> G[Build image: hipblas-fedora]
+    F --> H[Build image: hipblas-ubuntu]
+    
+    G --> I[Push to local registry]
+    H --> I
+    
+    I --> J[Jenkins pulls on GPU nodes]
+    J --> K[Run test container with GPU mount]
+    K --> L[Collect results to JSONL]
+    L --> M[Generate dashboard/report]
+```
+
+---
+
+#### 🔧 Implementation Checklist (Future Work)
+
+**Phase 1: Template & Config Foundation (Week 2)**
+- [ ] Create `scripts/generate-dockerfiles.py` script
+- [ ] Define standard Dockerfile.base template for Fedora
+- [ ] Define standard Dockerfile.base template for Ubuntu  
+- [ ] Implement YAML config parser for package manifests
+
+**Phase 2: Core Package Implementation (Weeks 3-4)**
+- [ ] Add `package-config.yaml` for hipblas (example complete)
+- [ ] Generate and test Fedora/Ubuntu Dockerfiles for hipblas
+- [ ] Build local registry on controller machine or set up Docker Hub private repo
+
+**Phase 3: Jenkins Pipeline Integration (Weeks 4-5)**
+- [ ] Add `Jenkinsfile` for container build stage
+- [ ] Configure build matrix (distro × GPU combinations)  
+- [ ] Create post-build test result aggregation pipeline
+- [ ] Integrate with existing pytest testing framework
+
+**Phase 4: Complete All ROCm Packages (Weeks 6-8)**
+- [ ] Repeat Phase 2-3 for all 89 ROCm packages
+- [ ] Document per-package configuration variations
+- [ ] Test container execution on actual GPU hardware (MI200/MI300/Vega)
+
+---
+
+#### 📁 File Structure Needed for Container System
+
+```bash
+rocm-tester/
+├── scripts/                                    # Build automation tools
+│   ├── generate-dockerfiles.py                # NEW: Config → Dockerfile generator
+│   ├── build-test-image.sh                    # NEW: Orchestrate per-disotr builds
+│   └── push-to-registry.sh                    # NEW: Push images to local registry
+│
+├── pkg-tests/hipblas/                          # EXAMPLE PACKAGE (template)
+│   ├── package-config.yaml                     # NEW: Package dependencies & test paths
+│   ├── Dockerfile.fedora                       # NEW: Fedora-specific variant
+│   ├── Dockerfile.ubuntu                       # NEW: Ubuntu-specific variant  
+│   └── smoke-test.sh                           # Already exists
+│
+├── pkg-tests/rocblas/                          # Next package to add
+│   ├── package-config.yaml                     # Needs creation
+│   ├── Dockerfile.fedora                       # Needs creation
+│   └── Dockerfile.ubuntu                       # Needs creation
+│
+├── jenkins/                                    # Jenkins orchestration
+│   ├── Jenkinsfile                             # NEW: Test container build pipeline
+│   └── shared-lib                              # NEW: Reusable test stages
+│
+└── configs/                                    # Shared configuration  
+    └── docker-registry-config.yaml            # NEW: Registry settings for local store
+```
+
+---
+
+#### 🚀 Testing Container Builds Manually (Quick Start)
+
+Once files are created, testing containers looks like:
+
+```bash
+# On controller machine with Docker daemon
+cd ~/devel/rocm-tester
+
+# Step 1: Generate Fedora-specific Dockerfile for hipblas
+./scripts/generate-dockerfiles.py --package hipblas --distro fedora
+
+# Step 2: Build the test container
+docker build --file pkg-tests/hipblas/Dockerfile.fedora -t rocmtester/hipblas-fedora .
+
+# Step 3: Verify container runs (dry-run test)
+docker run --rm --gpus=all rocmtester/hipblas-fedora env | head -20
+
+# Step 4: Push to local registry for other nodes to consume
+docker tag rocmtester/hipblas-fedora localhost:5000/hipblas-fedora
+docker push localhost:5000/hipblas-fedora
+```
+
+---
+
+#### ⚡ Resource Constraints & Optimization Notes
+
+Given limited GPU resources:
+
+1. **Image Caching**: All images should be pre-built in CI before GPU test matrix runs  
+2. **Shared Base Images**: `fedora-base-test-runner` and `ubuntu-base-test-runner` to reduce build times  
+3. **Parallel Builds**: Build all package Dockerfiles concurrently (non-GPU dependent)  
+4. **Test-Only Execution**: No long-lived containers; ephemeral run → clean
+
+---
+
+#### 📊 Expected Container Statistics (Full System)
+
+| Metric | Expected Count |
+|--------|---------------|
+| Package-specific Dockerfiles | 178 total (89 packages × 2 distros) |
+| Base template files | 6 core templates |
+| Configuration files | 89 package-config.yaml entries |
+| Generated build outputs | Potentially thousands of images over time |
+
+---
+
+### Updated Section List:
+
+```
+PLAN.md Sections Now Include:
+[1] Executive Summary & Goals
+[2] Problem Statement
+[3] System Architecture (Orchestrator + Pollers)
+[4] Testing Framework Structure  
+[5] Container Builds & Deployment ⭐ NEW
+  - Current State Summary
+  - Container Architectural Design
+  - Missing Components Checklist
+  - Build Pipeline Implementation Details
+  - Dockerfile Generation Strategy
+  - Test Matrix Execution Workflow
+```
+
+---

@@ -1,0 +1,10 @@
+FROM registry:2
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL description="Distributed test image registry for ROCm-Tester project"
+LABEL version="0.1.5"
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5000/v2/_catalog || exit 1

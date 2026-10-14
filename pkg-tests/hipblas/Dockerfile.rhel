@@ -1,0 +1,120 @@
+# =============================================================================
+# ROCm-Tester HIPBLAS Smoke & Unit Test Container (RHEL/CentOS Stream 10 Variant)
+# UPDATED v0.1.2 - Full comprehensive testing matching Fedora architecture
+# =============================================================================
+# Base Image: CentOS Stream 10 with EPEL repository enabled
+# This provides RHEL-like environment with rolling release characteristics
+# ROCm packages sourced from EPEL (like Fedora RPM repositories)
+# =============================================================================
+
+FROM quay.io/centos/centos:stream10 as base-image
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL description="HIPBLAS smoke+unit test container - RHEL/CentOS Stream 10 variant"
+LABEL version="0.1.2"
+LABEL org.opencontainers.image.title="hipblas-smoke-unit-tests-rhel"
+
+# Set environment variables for test configuration (matches Fedora/Ubuntu patterns)
+ENV TEST_NAME=hipblas-comprehensive-tests
+ENV LOG_LEVEL=info  
+ENV HIPBLAS_TEST_TIMEOUT="3600"
+ENV EPEL_ENABLED=true
+
+# =============================================================================
+# PHASE 1: BASE IMAGE SETUP - Add EPEL repository
+# Similar to Fedora but uses CentOS Stream container image
+# This provides RHEL-compatible environment for package testing
+# =============================================================================
+
+FROM base-image AS rhel-builder
+
+# Set up EPEL repository (required for ROCm packages in RHEL ecosystem)
+COPY rhel-patches/epel-release-latest-10.noarch.rpm /usr/local/epel-release.rpm || true
+RUN if [ -f /usr/local/epel-release.rpm ]; then \
+        rpm -Uvh /usr/local/epel-release.rpm && \
+        dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || true; \
+    else \
+        # Fallback: EPEL already in image or using alternative method
+        yum-config-manager --enable centos-sources 2>/dev/null || true; \
+    fi
+
+# =============================================================================
+# PHASE 2: FULL BUILD IMAGE - Base with all dependencies installed
+# =============================================================================
+
+FROM rhel-builder AS test-runtime
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL version="0.1.2"
+
+# =============================================================================
+# BASE TOOL INSTALLATION (RHEL/CentOS Stream specific)  
+# Using dnf package manager similar to Fedora but CentOS-specific paths
+# =============================================================================
+
+RUN dnf update -y && \
+    dnf install -y --skip-broken \
+        gcc-c++ \
+        git \
+        cmake \
+        ninja-build \
+        python3-pip \
+        boost-devel \
+        yum-utils \
+        rpmdevtools \
+        spectool \
+    && rm -rf /var/cache/dnf/*
+
+# =============================================================================
+# ROCm DEPENDENCY INSTALLATION (RHEL/CentOS EPEL packages)
+# Similar to Fedora but packages sourced from CentOS/RPM repository ecosystem
+# =============================================================================
+
+RUN dnf update -y && dnf clean all && \
+    dnf install -y --skip-broken \
+        epel-release \
+        hipblas-devel \
+        rocblas-devel \
+        rocsolver-devel \
+        rocm-hip-devel \
+        hip-tests \
+        rocminfo \
+    && dnf clean all
+
+# =============================================================================
+# HIPBLAS UNIT TEST SOURCE CODE SETUP (same as Fedora - EPEL source package)  
+# Clone RPM source for comprehensive testing including HIPBLAS validation tests
+# Uses epel10 branch from Fedora's hipblas RPM repository structure (shared ecosystem)
+# =============================================================================
+
+RUN git clone -b epel10 --depth 1 https://src.fedoraproject.org/rpms/hipblas.git /opt/hipblas-rhel || \
+    git clone --depth 1 https://src.fedoraproject.org/rpms/hipblas.git /opt/hipblas-rhel
+
+WORKDIR /opt/hipblas-rhel
+
+# Get build dependencies from spec file for HIPBLAS (EPEL-specific)
+RUN dnf repoquery -y hipblas && \
+    dnf builddep --with test hipblas 2>/dev/null || true
+
+WORKDIR /rocm-packages-tester
+
+# =============================================================================
+# COPY COMPREHENSIVE TEST EXECUTION SCRIPTS
+# Same as Fedora but with RHEL-specific paths and configuration
+# =============================================================================
+
+COPY ../hipblas-tests/comprehensive-smoketests.sh /opt/smoketests/run_comprehensive_tests.sh
+COPY ../hipblas-tests/hipblas-test-compile.sh /opt/smoketests/compile_and_run_unit_tests.sh  
+
+RUN chmod +x /opt/smoketests/*.sh
+
+# =============================================================================
+# DEFAULT COMMAND - RUN COMPREHENSIVE TESTS (SMOKE+UNIT) ON GPU  
+# RHEL-compatible execution with EPEL package installation verification
+# Identical test flow to Fedora for consistency across distro builds
+# =============================================================================
+
+WORKDIR /rocm-packages-tester
+CMD ["/opt/smoketests/run_comprehensive_tests.sh"]
+
+# Run with: docker run --rm --device=/dev/kfd rocmtester/hipblas-rhel-stream10

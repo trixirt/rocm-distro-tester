@@ -97,3 +97,127 @@ To extend this framework:
 ## License
 
 MIT License (see LICENSE file)
+
+## Docker Registry Setup (Local Development & CI)
+
+### Quick Start
+
+**1. Deploy Registry on Builder Machine:**
+```bash
+cd ~/devel/rocm-tester
+./ci-trigger/scripts/setup_docker_registry.sh -v
+```
+
+This will:
+- Create a local registry container (`rocm-registry`) on port 5000
+- Set up storage at `/var/lib/registry/docker-registry`
+- Validate registry health automatically
+- Show next steps for test machine configuration
+
+**2. Configure Test Machines:**  
+On each test node where images will run:
+
+Edit `/etc/docker/daemon.json`:
+```json
+{
+  "insecure-registries": ["<builder-hostname>:5000"]
+}
+```
+
+Then restart Docker:
+```bash
+sudo systemctl restart docker
+```
+
+**3. Build and Push Images:**  
+On the builder machine (this is where builds happen once, deploy many times):
+
+```bash
+# Build all available test images (one-time operation)
+./scripts/build-all-images.sh --force-rebuild
+
+# Or build specific image for testing:
+./scripts/build-all-images.sh hipblas-fedora
+```
+
+**4. Pull and Run on Test Nodes:**  
+Once registry is configured, any test node can pull and execute containers:
+
+```bash
+docker pull rocm-builder:5000/hipblas-fedora:latest
+docker run --rm --device=/dev/kfd rocm-builder:5000/hipblas-fedora:latest
+```
+
+---
+
+### Image Naming Convention
+
+All test images use this tagging pattern:
+- **Format**: `rocm-builder:5000/<distro>-<package>:latest`
+- **Examples**:
+  - `rocm-builder:5000/hipblas-fedora:latest`
+  - `rocm-builder:5000/hipblas-ubuntu:latest`  
+  - `rocm-builder:5000/hipblas-rhel:latest`
+
+---
+
+### Registry Architecture
+
+```
+BUILDER MACHINE ───┐       ┌───────────── TEST MACHINES
+      │            │       │
+  registry:2     local   pull & run
+   (port:5000) ├──◄──────►│ docker daemon
+                    network configured for 
+                    <builder>:5000
+```
+
+**Benefits:**
+- Build once → Deploy many times across all GPU nodes
+- Zero-copy deployment (pulls cached on network)  
+- Minimal operational overhead (one process, no complex orchestration)
+- Fast subsequent pulls from local registry cache
+
+---
+
+### Troubleshooting Common Issues
+
+1. **Registry won't start**
+   ```bash
+   docker logs rocm-registry     # View error output
+   sudo systemctl status docker  # Check daemon health
+   ```
+
+2. **Test machines can't reach registry**  
+   Ensure builder hostname resolves from all test nodes:
+   ```bash
+   ping <builder-hostname>       # Should resolve to local network IP
+   cat /etc/docker/daemon.json   # Verify insecure-registries setting
+   sudo systemctl restart docker  # Restart Docker on affected nodes
+   ```
+
+3. **Image build errors**  
+   Check builder machine for:
+   - Sufficient disk space (registry stores images persistently)
+   - Docker daemon connectivity to network
+   - Package dependencies for each distro in respective Dockerfiles
+
+4. **Pull fails on test node**  
+   ```bash
+   docker info | grep "Registry Mirrors"  # Verify configuration applied
+   curl http://<builder>:5000/v2/_catalog  # Manual health check from test node
+   ```
+
+---
+
+### Future Enhancements
+
+v0.2 scope (deferred, based on production experience):
+- Registry backup and disaster recovery procedures
+- Automated registry health monitoring  
+- TLS encryption for registry communication
+- Multi-organization support with access control
+
+For now: Manual operational simplicity prioritizes single-developer maintenance model.
+
+See [PLAN.md](./PLAN.md#section-6-docker-registry-infrastructure-new-v015) for complete technical details and options evaluation.

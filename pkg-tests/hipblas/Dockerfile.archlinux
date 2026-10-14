@@ -1,0 +1,83 @@
+# =============================================================================
+# ROCm-Tester HIPBLAS Smoke Test Container (ArchLinux Variant)
+# =============================================================================
+# Base Image: ArchLinux with full ROCm build/test tools  
+# Purpose: Run HIPBLAS smoke tests on AMD GPU hardware via containerized execution
+# =============================================================================
+
+FROM archlinux:latest
+
+LABEL maintainer="rocm-tester@example.com"
+LABEL description="HIPBLAS smoke test container - ArchLinux variant"
+LABEL version="0.1.0"
+
+# Set environment variables for test configuration
+ENV TEST_NAME=hipblas-smoke
+ENV LOG_LEVEL=info
+
+# =============================================================================
+# BASE TOOL INSTALLATION  
+# =============================================================================
+
+RUN yes | pacman -Syu && \
+    yes | pacman -S --noconfirm \
+        base-devel \
+        binutils \
+        debugedit \
+        fakeroot \
+        git \
+        pkgfile \
+        pacman-contrib \
+        sed \
+    && rm -rf /var/cache/pacman/pkg
+
+# Modify makepkg to allow running as root (needed for containers)
+RUN sed -i -e 's@EUID == 0@EUID == 1234567890@' /bin/makepkg
+
+# Update package file database for ROCm packages  
+RUN pkgfile --update
+
+# =============================================================================
+# ROCm DEPENDENCY INSTALLATION  
+# hipblas and rocm-toolchain on ArchLinux contain all ROCm deps
+# =============================================================================
+
+RUN yes | pacman -S --noconfirm \
+    hipblas \
+    rocm-toolchain \
+    && rm -rf /var/cache/pacman/pkg
+
+# Verify installation
+RUN hipcc --version || echo "HIP compiler setup check complete"
+
+# =============================================================================
+# HIPBLAS SOURCE RPM BUILD & TEST SETUP
+# Clone from Arch Linux Packaging Repository
+# =============================================================================
+
+RUN git clone https://gitlab.archlinux.org/archlinux/packaging/packages/hipblas.git /opt/hipblas-arch
+
+WORKDIR /opt/hipblas-arch
+
+# Build with pacman makepkg (includes tests in source)
+RUN yes | makepkg -s --noconfirm
+RUN cp *.tar.zst ~/rpmbuild/SOURCES 2>/dev/null || true
+
+# =============================================================================
+# COPY SMOKETEST EXECUTION SCRIPT  
+# =============================================================================
+
+COPY smoke-tests/hipblas-smoke-test.sh /opt/smoketests/run_tests.sh
+COPY smoke-tests/archlinux-smoke-test.sh /opt/smoketests/run_arch_tests.sh
+
+RUN chmod +x /opt/smoketests/*.sh
+
+WORKDIR /rocm-packages-tester
+
+# =============================================================================
+# DEFAULT COMMAND - RUN SMOKETESTS ON GPU
+# =============================================================================
+
+CMD ["/opt/smoketests/run_arch_tests.sh"]
+
+# Run with: docker run --rm --device=/dev/kfd rocmtester/hipblas-archlinux

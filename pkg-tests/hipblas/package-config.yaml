@@ -1,17 +1,18 @@
 # =============================================================================
-# HIPBLAS Package Configuration for ROCm-Tester
+# HIPBLAS Package Configuration for ROCm-Tester  
 # =============================================================================
 # This file defines per-distro test configuration for the hipblas ROCm package.
-# Used by container build system to generate distro-specific Dockerfiles.
+# Supported distros: fedora, archlinux (more to be added)
 
 package_name: hipblas
-package_version: latest  # Will track from Fedora Koji via poll-fedora-builds.py
+# Note: Fedora version tracked via Koji API poller
+# ArchLinux version: latest pacman repository version
 
-test_type: smoke-tests
+test_type: smoke-tests  
 test_description: "Run HIPBLAS GPU compute operations and verify correct execution"
 
 # =============================================================================
-# DISTRO-SPECIFIC CONFIGURATIONS
+# DISTRO-SPECIFIC CONFIGURATIONS  
 # =============================================================================
 
 distro_configs:
@@ -22,7 +23,7 @@ distro_configs:
     # Package manager command
     package_manager: "dnf"
     
-    # ROCm packages to install
+    # ROCm packages to install via Fedora package repository
     rocm_packages:
       - "hipblas-devel"          # HIP BLAS library development files
       - "rocblas-devel"          # ROC BLAS library (AMD implementation)
@@ -31,7 +32,7 @@ distro_configs:
       - "hip-tests"              # HIP test utilities
       - "rocminfo"               # Device information tool
     
-    # Additional system dependencies
+    # Additional system dependencies  
     additional_packages:
       - "gcc-c++"
       - "git"
@@ -41,50 +42,96 @@ distro_configs:
       - "boost-devel"
     
     test_configuration:
-      # Where the smoke tests are located in container
-      test_path: "/opt/hipblas-smoke/smoke-test.sh"
-      
-      # Test timeout (seconds)
+      test_path: "/opt/smoketests/run_tests.sh"
       timeout_seconds: 1800
-      
-      # GPU device mount path within container
       gpu_device_path: "/dev/kfd"
-      
-      # Log output location  
       log_dir: "/output/test-results"
 
+  archlinux:
+    # Base image for ArchLinux variant  
+    base_image: "archlinux:latest"
+    
+    # Package manager command
+    package_manager: "pacman"
+    
+    # ROCm packages available via pacman (Arch Linux ROCm packages)
+    rocm_packages:
+      - "hipblas"                # HIP BLAS library (single Arch package)
+      - "rocm-toolchain"         # Complete ROCm toolchain on Arch
+      - "hipcc"                  # HIP compiler
+      - "rocminfo"               # Device info utility
+    
+    # Essential build dependencies for ArchLinux
+    additional_packages:
+      - "base-devel"             # Core compilation tools
+      - "binutils"               # GNU binutils collection  
+      - "git"
+      - "pkgfile"                # Package file search tool on Arch
+      - "sed"                    # Stream editor
+    
+    # Special considerations for ArchLinux container environment
+    test_configuration:
+      test_path: "/opt/smoketests/run_arch_tests.sh"
+      timeout_seconds: 1800
+      gpu_device_path: "/dev/kfd"  
+      log_dir: "/output/test-results"
+      
+    archlinux_specific:
+      # Modify makepkg to allow root execution in containers
+      alter_makepkg_euid_check: true
+      # Update package file database before builds
+      update_pkgfile_db_before_build: true
+      # Set ROCM_PATH environment variable explicitly  
+      rocm_path_env: "/opt/rocm"
+
 # =============================================================================
-# TEST EXECUTION PARAMETERS  
+# TEST EXECUTION PARAMETERS (Common for All Distros)
 # =============================================================================
 
 test_execution:
   requires_gpu: true
   minimum_gpu_memory_gb: 8
-  compute_capability_min: "7.0"  # For AMD gfx90x and newer
+  compute_capability_min: "7.0"  # AMD gfx90x support requirement
   
 run_parameters:
-  docker_command: "docker run --rm --device=/dev/kfd rocmtester/hipblas-fedora"
-  
+  docker_base_command: "docker run --rm --device=/dev/kfd rocmtester/{PACKAGE}-{DISTRO}:{VERSION}"
+
 # =============================================================================
-# RESULT AGGREGATION SCHEMA
+# RESULT AGGREGATION SCHEMA (Unified Across Distros)  
 # =============================================================================
 
 result_schema:
   test_name: "hipblas-smoke"
   expected_result: "PASSED"
-  output_format: "json"
-  result_fields:
+  output_dir: "/output/test-results"
+  result_files:
+    - filename: "hipblas-smoke-result.json"         # Fedora variant
+      format: "json"
+    - filename: "hipblas-smoke-result-arch.json"    # ArchLinux variant  
+      format: "json"
+  
+  required_fields:
     - name: "test_status"
       type: "string"
-      description: "PASSED or FAILED"
-    - name: "duration_seconds"
+      values: ["PASSED", "FAILED"]
+      
+    - name: "duration_seconds"  
       type: "integer"
-      description: "Test execution duration"
+      description: "Test execution duration in seconds"
+      
     - name: "gpu_model"
       type: "string"
-      description: "Detected GPU model name"
+      description: "Detected GPU model (via rocminfo)"
+      
     - name: "error_message"
       type: "string"
       nullable: true
-      description: "Error message if test failed"
+      
+  archlinux_fields:
+    - name: "base_distro"
+      type: "string"  
+      default: "archlinux:latest"
+    - name: "package_manager" 
+      type: "string"
+      value: "pacman"
 

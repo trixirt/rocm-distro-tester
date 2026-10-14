@@ -236,8 +236,7 @@ def main():
         description='Poll EPEL repositories for RHEL/CentOS Stream ROCm package updates'
     )
     
-    parser.add_argument(
-        '--package', 
+    parser.add_argument('-p', '--package', 
         action='store',
         help='Specific package to check (default: all tracked packages)'
     )

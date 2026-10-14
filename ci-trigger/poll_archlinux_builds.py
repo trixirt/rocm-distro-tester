@@ -206,7 +206,7 @@ def main():
         help='Specific package to check (default: all tracked packages)'
     )
     parser.add_argument(
-        '--list-packages', '-l',
+        '-l', '--list-packages',
         action='store_true',
         help='Show all tracked ROCm packages'
     )

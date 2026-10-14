@@ -274,13 +274,11 @@ def main():
         description='Poll Ubuntu repositories for ROCm package updates'
     )
     
-    parser.add_argument(
-        '--package', 
+    parser.add_argument('-p', '--package', 
         action='store',
         help='Specific package to check (default: all tracked packages)'
     )
-    parser.add_argument(
-        '--list-packages', '-l', 
+    parser.add_argument('-l', '--list-packages', 
         action='store_true',
         default=False,
         help='Show all tracked Ubuntu ROCm packages'

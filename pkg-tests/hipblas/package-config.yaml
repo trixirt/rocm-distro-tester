@@ -1,0 +1,90 @@
+# =============================================================================
+# HIPBLAS Package Configuration for ROCm-Tester
+# =============================================================================
+# This file defines per-distro test configuration for the hipblas ROCm package.
+# Used by container build system to generate distro-specific Dockerfiles.
+
+package_name: hipblas
+package_version: latest  # Will track from Fedora Koji via poll-fedora-builds.py
+
+test_type: smoke-tests
+test_description: "Run HIPBLAS GPU compute operations and verify correct execution"
+
+# =============================================================================
+# DISTRO-SPECIFIC CONFIGURATIONS
+# =============================================================================
+
+distro_configs:
+  fedora:
+    # Base image for Fedora variant
+    base_image: "fedora:rawhide"
+    
+    # Package manager command
+    package_manager: "dnf"
+    
+    # ROCm packages to install
+    rocm_packages:
+      - "hipblas-devel"          # HIP BLAS library development files
+      - "rocblas-devel"          # ROC BLAS library (AMD implementation)
+      - "rocsolver-devel"        # Solver libraries for LAPACK routines
+      - "rocm-hip-devel"         # HIP toolkit development headers
+      - "hip-tests"              # HIP test utilities
+      - "rocminfo"               # Device information tool
+    
+    # Additional system dependencies
+    additional_packages:
+      - "gcc-c++"
+      - "git"
+      - "cmake"
+      - "ninja-build"
+      - "python3-pip"
+      - "boost-devel"
+    
+    test_configuration:
+      # Where the smoke tests are located in container
+      test_path: "/opt/hipblas-smoke/smoke-test.sh"
+      
+      # Test timeout (seconds)
+      timeout_seconds: 1800
+      
+      # GPU device mount path within container
+      gpu_device_path: "/dev/kfd"
+      
+      # Log output location  
+      log_dir: "/output/test-results"
+
+# =============================================================================
+# TEST EXECUTION PARAMETERS  
+# =============================================================================
+
+test_execution:
+  requires_gpu: true
+  minimum_gpu_memory_gb: 8
+  compute_capability_min: "7.0"  # For AMD gfx90x and newer
+  
+run_parameters:
+  docker_command: "docker run --rm --device=/dev/kfd rocmtester/hipblas-fedora"
+  
+# =============================================================================
+# RESULT AGGREGATION SCHEMA
+# =============================================================================
+
+result_schema:
+  test_name: "hipblas-smoke"
+  expected_result: "PASSED"
+  output_format: "json"
+  result_fields:
+    - name: "test_status"
+      type: "string"
+      description: "PASSED or FAILED"
+    - name: "duration_seconds"
+      type: "integer"
+      description: "Test execution duration"
+    - name: "gpu_model"
+      type: "string"
+      description: "Detected GPU model name"
+    - name: "error_message"
+      type: "string"
+      nullable: true
+      description: "Error message if test failed"
+

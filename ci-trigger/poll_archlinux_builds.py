@@ -216,9 +216,9 @@ def main():
         help='State file path'
     )
     parser.add_argument(
-        '--archlinux', '-a', 
+        '-a', '--all', 
         action='store_true',
-        help='Alias for --all packages (ArchLinux)'
+        help='Check all packages (default)'
     )
     
     args = parser.parse_args()

@@ -291,16 +291,16 @@ def main():
     parser.add_argument(
         '--release', '-r',
         type=str,
-        default=DEFAULT_RELEASE,
+        default='latest',
         choices=['latest', 'lts', 'focal', 'jammy', 'noble', 'oracular'],
-        help=f'Ubuntu release version to check (default: {DEFAULT_RELEASE})'
+        help='Ubuntu release version to check (default: oracular)'
     )
     
     args = parser.parse_args()
     
     # Initialize paths
     release_version = UBUNTU_RELEASE_TRACKING.get(args.release, DEFAULT_RELEASE)
-    state_file = args.file
+    state_file = args.file or DEFAULT_STATE_FILE
     state_file.parent.mkdir(parents=True, exist_ok=True)
     
     print(f"=== Ubuntu Launchpad Package Build Poller ===")

@@ -1,8 +1,15 @@
-# ROCm-Tester: Testing & Validation Tasks - Agent Handoff
+# ROCm-Distro-Tester: Testing & Validation Tasks - Agent Handoff
 
-**Project:** rocm-tester  
+**Project:** rocm-distro-tester  
 **Current Version:** v0.1.6 (Dashboard Implementation Complete)  
-**Repository Root:** `~/devel/rocm-tester`  
+**Clone Anywhere:** The project can be cloned to any directory and executed from there.
+
+```
+## Clone & Setup:
+
+`git clone https://github.com/your-org/rocm-distro-tester.git`
+`cd rocm-distro-tester`
+```
 **Last Commit:** 6e084dedcad2 (Add Docker Registry Infrastructure v0.1.5 + Dashboard v0.1.6)  
 
 ---
@@ -55,7 +62,7 @@ You may execute tasks sequentially or in parallel based on dependencies. Mark co
 **Objective:** Ensure `poll_fedora_builds.py` is syntactically valid and imports correctly.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && python3 -m py_compile ci-trigger/poll_fedora_builds.py
+cd rocm-distro-tester && python3 -m py_compile ci-trigger/poll_fedora_builds.py
 python3 -c "import sys; sys.path.insert(0, 'ci-trigger'); from poll_fedora_builds import TRACKED_ROCM_PACKAGES; print('Imports OK:', len(TRACKED_ROCM_PACKAGES))"
 ```
 **Success Criteria:** No `SyntaxError` returned. `TRACKED_ROCM_PACKAGES` lists ≥ 7 items on output.
@@ -66,7 +73,7 @@ python3 -c "import sys; sys.path.insert(0, 'ci-trigger'); from poll_fedora_build
 **Objective:** Ensure `poll_ubuntu_builds.py` handles mock responses gracefully (simulated without live API).
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && python3 -m py_compile ci-trigger/poll_ubuntu_builds.py
+cd rocm-distro-tester && python3 -m py_compile ci-trigger/poll_ubuntu_builds.py
 
 # Simulate network failure handling in code inspection:
 grep -n "except.*Exception" ci-trigger/poll_ubuntu_builds.py | head -2
@@ -79,7 +86,7 @@ grep -n "except.*Exception" ci-trigger/poll_ubuntu_builds.py | head -2
 **Objective:** Verify `poll_epel_builds.py` uses correct base API URL for CentOS Stream.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && python3 -m py_compile ci-trigger/poll_epel_builds.py
+cd rocm-distro-tester && python3 -m py_compile ci-trigger/poll_epel_builds.py
 
 # Check hardcoded constants:
 grep "KOJI_EPEL_BASE_URL" ci-trigger/poll_epel_builds.py | grep -E "(https?)|(koji)" 
@@ -94,7 +101,7 @@ grep "KOJI_EPEL_BASE_URL" ci-trigger/poll_epel_builds.py | grep -E "(https?)|(ko
 **Objective:** Ensure `ci-trigger/docker/Dockerfile.registry` is a valid, multi-stage or single-stage build.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && cat ci-trigger/docker/Dockerfile.registry | grep "^FROM"
+cd rocm-distro-tester && cat ci-trigger/docker/Dockerfile.registry | grep "^FROM"
 cat ci-trigger/docker/Dockerfile.registry | grep "ENV\|LABEL"
 ```
 **Success Criteria:** `FROM registry:2` present. Labels include `maintainer`, `description`, `version`.
@@ -105,7 +112,7 @@ cat ci-trigger/docker/Dockerfile.registry | grep "ENV\|LABEL"
 **Objective:** Verify `ci-trigger/docker/Dockerfile.dashboard` and `requirements.txt` are coherent.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 echo "Checking Docker Compose Config:"
 docker compose -f docker-compose.dashboard.yml config > /tmp/check_compose.txt 2>&1
 
@@ -121,7 +128,7 @@ cat ci-trigger/dashboard/requirements.txt | grep Flask
 **Objective:** Spin up the dashboard container and verify port exposure (do not actually start full test, just validate setup).
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 docker run --rm -p 5001:5001 rocm-dashboard:latest & 
 sleep 3
 curl -f http://localhost:5001/api/summary 2>/dev/null && echo "API Responded" || echo "No Response"
@@ -137,7 +144,7 @@ docker stop $(docker ps -q --filter ancestor=rocm-dashboard:latest)
 **Objective:** Confirm `app.py` has no import errors or missing dependencies before running.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && python3 -c "from ci-trigger.dashboard.app import app; print('App Loaded'); assert app is not None"
+cd rocm-distro-tester && python3 -c "from ci-trigger.dashboard.app import app; print('App Loaded'); assert app is not None"
 ```
 **Success Criteria:** No `ModuleNotFoundError`. Assertion passes (app object exists).
 
@@ -147,7 +154,7 @@ cd ~/devel/rocm-tester && python3 -c "from ci-trigger.dashboard.app import app; 
 **Objective:** Ensure `templates/base.html` and templates exist with correct blocks.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && ls ci-trigger/dashboard/templates/*.html
+cd rocm-distro-tester && ls ci-trigger/dashboard/templates/*.html
 
 # Check for core blocks defined in all templates:
 grep -l "{% block content %}" ci-trigger/dashboard/templates/*
@@ -160,7 +167,7 @@ grep -l "{% block content %}" ci-trigger/dashboard/templates/*
 **Objective:** Ensure the `load_all_results` function correctly handles empty directories and JSON errors.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && python3 ci-dashboard-parsing-test.py << 'PYTEST'
+cd rocm-distro-tester && python3 ci-dashboard-parsing-test.py << 'PYTEST'
 # Inline script to test data loader
 import sys, os 
 from pathlib import Path
@@ -178,7 +185,7 @@ print("Testing Result Parser...") # Will run in session context
 **Objective:** Execute pytest suites for all pollers to confirm logic validity.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && pytest ci-trigger/tests/test_poll_fedora_builds.py -v
+cd rocm-distro-tester && pytest ci-trigger/tests/test_poll_fedora_builds.py -v
 pytest ci-trigger/tests/test_poll_archlinux_builds.py -v  # Note: Arch Linux might need adjustment
 pytest ci-trigger/tests/test_poll_ubuntu_builds.py -v    # If applicable (Poll_ubuntu is separate)
 ```
@@ -190,7 +197,7 @@ pytest ci-trigger/tests/test_poll_ubuntu_builds.py -v    # If applicable (Poll_u
 **Objective:** Execute dashboard tests ensuring 100% line coverage on key functions.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && pytest ci-trigger/tests/test_dashboard.py -v --cov=ci-trigger/dashboard/app.py
+cd rocm-distro-tester && pytest ci-trigger/tests/test_dashboard.py -v --cov=ci-trigger/dashboard/app.py
 # Check final summary for line count:
 grep "TOTAL" ci-trigger/reports/coverage.txt 2>/dev/null || echo "Coverage report generated"
 ```
@@ -204,7 +211,7 @@ grep "TOTAL" ci-trigger/reports/coverage.txt 2>/dev/null || echo "Coverage repor
 **Objective:** Ensure documentation matches the code structure created in this session.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester 
+cd rocm-distro-tester 
 # Search Plan for key sections and verify existence:
 grep -l "Section 6" PLAN.md && find . -name "docker" -type d | wc -l
 
@@ -219,7 +226,7 @@ grep "Web Dashboard" README.md
 **Objective:** Ensure shell scripts (`setup_docker_registry.sh`, `setup_dashboard.sh`) have execute permissions and shebangs.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && ls -la ci-trigger/scripts/*.sh | grep "^-rwx"
+cd rocm-distro-tester && ls -la ci-trigger/scripts/*.sh | grep "^-rwx"
 
 # Verify script header:
 head -3 ci-trigger/scripts/setup_docker_registry.sh
@@ -234,7 +241,7 @@ head -3 ci-trigger/scripts/setup_docker_registry.sh
 **Objective:** Verify `poll_fedora_builds.py` handles network timeouts without crashing.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && timeout 5 python3 -c "
+cd rocm-distro-tester && timeout 5 python3 -c "
 import sys; sys.path.insert(0, 'ci-trigger')
 from poll_fedora_builds import query_fedora_koji_api
 # Note: This will fail on network but check exception handling in code review below.
@@ -248,10 +255,10 @@ grep -A2 "import requests" ci-trigger/poll_fedora_builds.py | grep -E "(try|exce
 ---
 
 #### Task F-2: Test Dashboard Empty Results Handling
-**Objective:** Confirm dashboard returns 200 OK when `/var/rocm-tester/results/`` contains no JSON files.
+**Objective:** Confirm dashboard returns 200 OK when `/var/RCAm-Distro-Tester results/`` contains no JSON files.
 **Commands:**
 ```bash
-cd ~/devel/rocm-tester && ls ci-trigger/dashboard/templates/
+cd rocm-distro-tester && ls ci-trigger/dashboard/templates/
 # Simulate empty dir manually via variable override in test fixture (run from Task C-1)
 # Ensure template doesn't crash on undefined iteration
 grep -n "for.*in results" ci-dashboard/templates/results.html

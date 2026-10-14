@@ -11,11 +11,11 @@ services:
       - "5001:5001"
     volumes:
       # Mount the results directory from builder machine
-      - /var/rocm-tester/results:/var/rocm-tester/results
+      - /var/rocm-distro-tester/results:/var/rocm-distro-tester/results
       # Local directory mapping for development convenience
       - ./ci-trigger/dashboard:/app
     environment:
-      - RESULTS_DIR=/var/rocm-tester/results
+      - RESULTS_DIR=/var/rocm-distro-tester/results
       - FLASK_DEBUG=1  # Useful for local dev
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/api/summary"]

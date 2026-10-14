@@ -1,4 +1,4 @@
-# ROCm-Tester CI Framework - Project Plan
+# ROCm-Distro-Tester CI Framework - Project Plan
 
 **Status**: v0.1 (Initial Draft)  
 **Date**: Oct 8, 2024  
@@ -137,13 +137,16 @@ distro_configs:
 ### Phase 1: Core Infrastructure (2 weeks)
 **Week 1-3**: Set up base automation framework
 ```bash
-# Day 1-2: Create project structure and initialize Git
-mkdir -p rocm-tester/{pkg-tests,ansible,ci-trigger}
+# Clone repository (can be placed anywhere):
+git clone https://github.com/your-org/rocm-distro-tester.git
+cd rocm-distro-tester
 
-# Day 3-5: Ansible playbooks for node provisioning
-playbook: roles/gpu-setup-* for Ubuntu/Fedora/opensuse
+# Day 3-5: Ansible playbooks for node provisioning (if using ansible)
+playbook: roles/gpu-setup-* for Ubuntu/Fedora/
+opensuse
 
 # Day 6-7: Jenkins configuration + Docker daemon setup on controller
+```
 ```
 
 **Week 2**: First end-to-end test (hipblas/smoke)
@@ -180,45 +183,37 @@ script: ci-trigger/orchestrator.sh --test-pack=hipblas --gpu=mi250
 
 ## File Structure Template
 
+The repository root can be placed anywhere on your system:
+
 ```
-~/devel/rocm-tester/
-├── PLAN.md                          <- This document
-├── HISTORY.md                       <- Revision history
-├── LICENSE
-├── README.md                        <- Getting started guide
+rocm-distro-tester/  # OR any other directory name
+├── PLAN.md                          -> This document
+├── HISTORY.md                       -> Revision history
+├── LICENSE                          -> MIT License
+├── README.md                        -> Getting started guide
 │
-├── ansible/                         <- Infrastructure provisioning
-│   ├── site.yml                   <- Main entry point  
-│   └── roles/
-│       ├── gpu-setup-ubuntu/      <- Ubuntu GPU node setup
-│       │   ├── tasks/main.yml
-│       │   └── templates/
-│       ├── gpu-setup-fedora/      <- Distro-specific variants
-│       └── test-environment/      <- Docker/Podman runtime
+├── ci-trigger/                      -> CI orchestration core
+│   ├── poll_{distro}_builds.py    -> Package update detection per distro
+│   ├── orchestrator.sh              -> Matrix test runner  
+│   └── tests/                       -> pytest unit test suites
+│       ├── conftest.py             -> Shared fixtures and mocks
+│       ├── test_poll_fedora_builds.py
+│       ├── test_poll_ubuntu_builds.py
+│       └── test_dashboard.py
 │
-├── ci-trigger/                      <- CI orchestration
-│   ├── poller-service.py          <- Polls package build APIs
-│   ├── orchestrator.sh            <- Matrix test runner  
-│   └── results/                   <- Test result storage
-│       ├── report-generator.py
-│       └── trends/                <- Historical JSONL data
+├── pkg-tests/                       -> Per-package test implementations
+│   └── hipblas/                     -> First production-ready package
+│       ├── Dockerfile.*             -> Distro-specific container builds
+│       ├── package-config.yaml      -> Dependency specification
+│       └── smoke-tests/             -> Comprehensive testing scripts
 │
-├── pkg-tests/                       <- Per-package tests
-│   ├── hipblas/
-│   │   ├── Dockerfile.ubuntu      <- Dist-agnostic variants
-│   │   ├── Dockerfile.fedora
-│   │   ├── package-config.yaml    <- Dependency mapping
-│   │   └── smoke-test.sh          <- Unified test logic
-│   ├── rocblas/                   <- More packages to come
-│   └── {all-rocm-packages}/       <- 89 packages total
-│
-├── scripts/                         <- Utility automation
-│   ├── build-image-template.py    <- Auto-generate Dockerfiles
-│   ├── generate-package-matrix.py <- YAML -> Jenkins matrix config
-│   └── report-viewer.html         <- Results dashboard
-│
-└── docs/                            <- Additional documentation
-    └── architecture-diagrams.md
+├── docker/                          -> Container images
+│   ├── Dockerfile.dashboard         -> Flask web interface
+│   └── Dockerfile.registry          -> Registry:2 base
+├── scripts/                         -> Build automation utilities
+│   └── build-all-images.sh
+└── ansible/                         -> Infrastructure configuration (v0.2+)
+    └── site.yml                     -> Main entry point
 ```
 
 ---
@@ -256,9 +251,9 @@ script: ci-trigger/orchestrator.sh --test-pack=hipblas --gpu=mi250
 ## Next Steps (Immediate Actions)
 
 ### Priority 1: Project Init
-- [x] Create repository structure in `~/devel/rocm-tester`
-- [x] Document initial PLAN.md and HISTORY.md
-- [ ] Initialize Git repository: `git init`
+- [x] Create repository (clone anywhere on your system)
+- [x] Document initial PLAN.md and HISTORY.md  
+- [ ] Initialize Git repository (or use existing GitHub repo)
 
 ### Priority 2: First Working Prototype
 - [ ] Implement `poller-service.py` for hipblas version tracking
@@ -418,16 +413,16 @@ markers =
 
 ### Running Tests
 ```bash
-# In repository root
-cd ~/devel/rocm-tester
+# In repository root (can be any location)
+cd rocm-distro-tester
 
-# Run all pytest tests
+# Run all pytest tests from repo root
 pytest ci-trigger/tests -v
 
 # Run specific test file  
 pytest ci-trigger/tests/test_poll_fedora_builds.py -v
 
-# With coverage (requires pytest-cov)
+# With coverage (requires pytest-cov):
 pytest ci-trigger/tests --cov=ci-trigger/poll-fedora-builds.py --cov-report=html
 ```
 
@@ -481,7 +476,7 @@ ci-trigger/tests/
 
 ```bash
 # All tests, most verbose output
-cd ~/devel/rocm-tester && python3 -m pytest ci-trigger/tests/ -v --tb=short
+cd rocm-distro-tester && python3 -m pytest ci-trigger/tests/ -v --tb=short
 
 # Specific module only  
 python3 -m pytest ci-trigger/tests/test_poll_fedora_builds.py -v
@@ -742,7 +737,7 @@ graph TB
 #### 📁 File Structure Needed for Container System
 
 ```bash
-rocm-tester/
+rocm-distro-tester/  # Repository root (can be any directory)
 ├── scripts/                                    # Build automation tools
 │   ├── generate-dockerfiles.py                # NEW: Config → Dockerfile generator
 │   ├── build-test-image.sh                    # NEW: Orchestrate per-disotr builds
@@ -775,7 +770,7 @@ Once files are created, testing containers looks like:
 
 ```bash
 # On controller machine with Docker daemon
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 
 # Step 1: Generate Fedora-specific Dockerfile for hipblas
 ./scripts/generate-dockerfiles.py --package hipblas --distro fedora
@@ -946,7 +941,7 @@ docker run --rm --device=/dev/kfd rocmtester/hipblas-fedora
 
 2. **Test Docker build locally (no GPU required):**
    ```bash
-   cd ~/devel/rocm-tester
+   cd rocm-distro-tester
    docker build --file pkg-tests/hipblas/Dockerfile.fedora -t rocmtester/hipblas-fedora:latest .
    docker run --rm rocmtester/hipblas-fedora ls /opt/rocm/bin/
    ```
@@ -1005,8 +1000,8 @@ ci-trigger/poll_archlinux_builds.py ✨ RENAME D for import compatibility
 To build and test your HIPBLAS Fedora container locally (before CI integration):
 
 ```bash
-# Navigate to project root
-cd ~/devel/rocm-tester
+# Navigate to project root (can be any directory)
+cd rocm-distro-tester
 
 # Build the container image  
 docker build --file pkg-tests/hipblas/Dockerfile.fedora -t hipblas-fedora-test .
@@ -1090,7 +1085,7 @@ distro_configs:
     test_path: "/opt/smoketests/run_arch_tests.sh"
 ```
 
-**Total HIPBLAS container files created for rocm-tester:**
+**Total HIPBLAS container files created for rocm-distro-tester:**
 
 | Package | Fedora Container | Arch Linux Container | Status |
 |---------|-----------------|----------------------|--------|
@@ -1397,7 +1392,7 @@ RUN apt-get install -y --no-install-recommends \
 
 ```bash
 # Build Ubuntu comprehensive container (v0.1.2)
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 docker build --file pkg-tests/ubuntu/Dockerfile.ubuntu -t hipblas-ubuntu-comprehensive .
 
 # Run comprehensive smoke + unit tests with GPU access
@@ -1722,7 +1717,7 @@ ci-trigger/tests/test_poll_ubuntu_builds.py:
 
 ```bash
 # Run Ubuntu poller tests in isolation
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 pytest ci-trigger/tests/test_poll_ubuntu_builds.py -v
 
 # Expected output:
@@ -1884,7 +1879,7 @@ python3 ci-trigger/poll-epel-builds.py --version 9 hipblas
 
 ### IMPLEMENTATION COMPLETION SUMMARY:
 
-The rocm-tester project now provides **comprehensive test coverage across all major distros:**
+The rocm-distro-tester project now provides **comprehensive test coverage across all major distros:**
 
 1. **Fedora (Rawhide)** - Rolling release with Koji RPM tracking
 2. **ArchLinux** - True rolling with minimal smoke testing
@@ -1935,7 +1930,7 @@ docker build → docker push ← registry ← docker pull → docker run
 
 **1. Setup Registry on Builder (one-time)**
 ```bash
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 ./ci-trigger/scripts/setup_docker_registry.sh -v
 # Output shows registry status and next steps
 ```
@@ -2098,7 +2093,7 @@ Version tags will be added when specific versioning strategy is required.
 
 ### Section Update Summary: Docker Registry v0.1.5
 
-The rocm-tester project now includes **production-ready image distribution infrastructure** enabling:
+The rocm-distro-tester project now includes **production-ready image distribution infrastructure** enabling:
 
 - ✅ Single build workflow supporting multiple distros
 - ✅ Zero-copy deployments across GPU test matrix  
@@ -2129,7 +2124,7 @@ This completes the foundational CI infrastructure for rolling deployment across 
 │     - API endpoints for programmatic access               │ │
 ├───────────────────────────────┬───────────────────────────┤
 │  Results Storage (Mounted)    │   Dashboard Configuration │
-│  /var/rocm-tester/results     │   /etc/docker/daemon.json │
+│  /var/rocm-distro-tester/results     │   /etc/docker/daemon.json │
 │    Contains:                  │   Ports: 5001 → internal  │
 │      - distro-result.json     │                    ↕      │
 │      - package-results.json   │              All test     │
@@ -2137,7 +2132,7 @@ This completes the foundational CI infrastructure for rolling deployment across 
 └───────────────────────────────┴───────────────────────────┘
 
 Test result flow:
-1. All test suites write JSON to /var/rocm-tester/results
+1. All test suites write JSON to /var/rocm-distro-tester/results
 2. Dashboard container mounted to that directory automatically  
 3. Users access http://builder-host:5001 from any machine on network
 4. Aggregated view across all distros (Fedora, Ubuntu, RHEL) and packages
@@ -2150,7 +2145,7 @@ Test result flow:
 **Setup (one-time only):**
 
 ```bash
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 
 # Deploy dashboard on builder machine with verbose output
 ./ci-trigger/scripts/setup_dashboard.sh -v
@@ -2335,7 +2330,7 @@ See Section 8 for detailed upgrade path considerations.
 
 ### Complete Dashboard Implementation Summary: v0.1.6
 
-The rocm-tester project now includes a **production-ready web dashboard** for aggregated test results viewing and analysis, enabling:
+The rocm-distro-tester project now includes a **production-ready web dashboard** for aggregated test results viewing and analysis, enabling:
 
 ✅ Single build deployment using Docker containerization
 ✅ Unified view across Fedora/Ubuntu/RHEL/CentOS Stream test suites  
@@ -2344,7 +2339,7 @@ The rocm-tester project now includes a **production-ready web dashboard** for ag
 ✅ Comprehensive pytest unit test coverage (~200 lines)
 ✅ Minimal operational complexity (one developer maintainable)
 
-This completes the core infrastructure phase of the rocm-tester project. Next steps: integrate dashboard into CI pipeline or extend with additional analysis capabilities based on actual usage patterns and user feedback from first deployments.
+This completes the core infrastructure phase of the rocm-distro-tester project. Next steps: integrate dashboard into CI pipeline or extend with additional analysis capabilities based on actual usage patterns and user feedback from first deployments.
 
 ---
 

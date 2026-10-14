@@ -37,7 +37,7 @@ class TestDashboardInitialization:
     def test_results_dir_default_value(self):
         """Should use correct default value for results directory."""
         
-        expected_path = '/var/rocm-tester/results'
+        expected_path = '/var/rocm-distro-tester/results'
         current_dir = dashboard.RESULTS_DIR
         
         # The path should be constructed correctly even if env variable not set

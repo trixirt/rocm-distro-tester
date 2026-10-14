@@ -18,7 +18,7 @@ app = Flask(__name__)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
-RESULTS_DIR = Path(os.environ.get('RESULTS_DIR', '/var/rocm-tester/results'))
+RESULTS_DIR = Path(os.environ.get('RESULTS_DIR', '/var/rocm-distro-tester/results'))
 
 
 def load_all_results(distros=None):

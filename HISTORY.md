@@ -1,4 +1,4 @@
-# ROCm-Tester Project History
+# ROCm-Distro-Tester Project History
 
 ## Creation Date: Oct 8, 2024
 

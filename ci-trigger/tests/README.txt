@@ -1,11 +1,11 @@
-ROCm-Tester Python Unit Tests
-=============================
+ROCm-Distro-Tester Python Unit Tests
+=====================================
 
 Directory: ci-trigger/tests/
 
 Purpose
 -------
-Comprehensive pytest unit tests for all Python CI components in the ROCm-Tester project.
+Comprehensive pytest unit tests for all Python CI components in the rocm-distro-tester project.
 
 Test Files
 ----------
@@ -24,9 +24,9 @@ Test Files
    - Provides mock response factories, temp directories, and import path injection
    - Auto-loaded by pytest for all test modules in this directory
 
-Running Tests
--------------
-cd ~/devel/rocm-tester
+Running Tests (from repository root)
+------------------------------------
+cd rocm-distro-tester
 
 # Run all tests with verbose output
 python3 -m pytest ci-trigger/tests/ -v

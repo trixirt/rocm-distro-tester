@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# ROCm-Tester: Dashboard Setup Script (v0.1)
+# ROCm-Distro-Tester: Dashboard Setup Script (v0.1)
 # Deploys the test results dashboard on builder machine via Docker Compose
 # Optimized for single-developer maintenance with minimal operational overhead
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/../.."
 
-RESULTS_PATH="${RESULTS_PATH:-/var/rocm-tester/results}"
+RESULTS_PATH="${RESULTS_PATH:-/var/rocm-distro-tester/results}"
 CONFIG_FILE="/etc/docker/daemon.json"
 SERVICE_NAME="rocm-dashboard"
 
@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
         --help|-h) 
             cat << 'HELPMESS'
 
-ROCm-Tester Dashboard Setup Script
+ROCm-Distro-Tester Dashboard Setup Script
 ====================================
 
 Deploy the Web Results Dashboard on builder machine for aggregated test result viewing.
@@ -45,7 +45,7 @@ OPTIONS:
   --help, -h          Display this help message
   
 CONFIGURATION VARIABLES:
-  RESULTS_PATH        Path to results directory mounted in container (default: /var/rocm-tester/results)
+  RESULTS_PATH        Path to results directory mounted in container (default: /var/rocm-distro-tester/results)
                       Ensure Docker can read/write to this path on builder machine
 
 STEPS TO SETUP:

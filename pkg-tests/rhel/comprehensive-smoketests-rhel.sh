@@ -239,7 +239,7 @@ run_rhel_unit_tests() {
 # =============================================================================
 # COMPOSITE RESULTS GENERATION (matches Fedora/Ubuntu output format)
 # Both smoke and unit test results combined in consistent JSON structure
-# This enables unified reporting across all distros tested by rocm-tester
+# This enables unified reporting across all distros tested by ROCm-Distro-Tester
 # =============================================================================
 
 generate_rhel_comprehensive_results() {

@@ -1,4 +1,4 @@
-# ROCm-Tester CI Framework
+# ROCm Distro Tester
 
 **Self-hosted continuous integration for AMD ROCm package testing across multiple Linux distributions**
 
@@ -19,9 +19,9 @@
 
 ### Initial Setup
 ```bash
-cd ~/devel/rocm-tester
-git init
-git submodule add <jenkins-slave-node-repo> jenkins-nodes  # Optional
+git clone https://github.com/your-org/rocm-distro-tester.git
+cd rocm-distro-tester
+```
 
 # Configure your test matrix via:
 ansible-playbook ansible/site.yml -e "target=distro_name -e gpu_nodes=[mi250,mi300]"  
@@ -63,23 +63,28 @@ See [PLAN.md](./PLAN.md) for complete system architecture and design decisions.
 
 ---
 
-## Project Structure
+## Quick Guide to Repository Structure
 
+**Main Project Files:**
+- `PLAN.md` - Comprehensive technical specifications and roadmap
+- `README.md` - This overview and quick start guide  
+- `HISTORY.md` - Design decisions and version history
+- `TODO.md` - Current development targets
+
+**Key Directories:**
 ```
-rocm-tester/
-├── PLAN.md                       # Design specification
-├── HISTORY.md                    # Major decisions log
-├── ansible/                      # Infrastructure setup
-│   ├── roles/gpu-setup-*/       # Distro-specific GPU drivers
-│   └── site.yml                 # Main entry point
-├── ci-trigger/                   # CI orchestration
-│   ├── poller-service.py        # Koji/Launchpad polling
-│   ├── orchestrator.sh          # Test matrix runner
-│   └── results/                 # Output storage
-├── pkg-tests/                    # Per-package tests
-│   ├─ hipblas/*/                 # First test implementation
-│   └─ {all-rocm-packages}        # All 89 packages to add
-└── docs/                         # Additional documentation
+rocm-distro-tester/
+├── ci-trigger/
+│   ├── poll_{distro}_builds.py  # Package update detection (Fedora, Ubuntu, Arch, EPEL)
+│   ├── orchestrator.sh           # Test matrix execution controller
+│   ├── tests/                    # pytest test suites for all components
+│   └── dashboard/                # Flask web interface for results
+├── pkg-tests/
+│   └── hipblas/                  # First production-ready test package
+│       ├── Dockerfile.*          # Distro-specific container builds
+│       └── smoke-tests/          # Comprehensive test scripts
+├── docker/                       # Container images (registry, dashboard)
+└── scripts/                      # Build automation utilities
 ```
 
 ---
@@ -104,7 +109,7 @@ MIT License (see LICENSE file)
 
 **1. Deploy Registry on Builder Machine:**
 ```bash
-cd ~/devel/rocm-tester
+cd rocm-distro-tester
 ./ci-trigger/scripts/setup_docker_registry.sh -v
 ```
 
@@ -250,6 +255,9 @@ curl http://localhost:5001/api/summary | jq '.statistics'
 
 ### Configuration:
 
-Dashboard container runs on port 5001 and mounts the `/var/rocm-tester/results` directory to read test result JSON files. No further setup required after initial deployment.
+See [PLAN.md](./PLAN.md) for detailed setup instructions including:
+- Docker registry deployment
+- Dashboard configuration and environment variables  
+- Per-distro package dependency specifications
 
 See [PLAN.md Section 7](./PLAN.md#section-7-web-dashboard-for-test-results-new-v016) for detailed technical documentation, API reference, and upgrade considerations.

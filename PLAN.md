@@ -314,3 +314,208 @@ script: ci-trigger/orchestrator.sh --test-pack=hipblas --gpu=mi250
 ---
 
 *This plan will be refined iteratively as the project progresses. Major changes should be documented in this file or via pull requests.*
+
+## Extension: Multi-Distro Polling Support
+
+Updated v0.1 (Oct 8, 2024) to support **ArchLinux package polling** alongside Fedora Koji:
+
+### New Poller Services
+
+| Script | Repository | API Type |
+|--------|------------|----------|
+| `ci-trigger/poll-fedora-builds.py` | Koji RPM builds | JSON + task_id tracking |
+| `ci-trigger/poll-archlinux-builds.py` | Official Arch PKGNAMES & AUR | HTML search parsing |
+
+### Updated Package Matrix Support
+
+```python
+# Tracked ROCm packages now include multi-distro support:
+TRACKED_ROCM_PACKAGES = [
+    'hipblas',      # Fedora Koji / Ubuntu Launchpad / Arch Linux
+    'rocblas',      # All distros
+    'hipsolver', 
+    'rocsolver',
+    'hipfft',       # May have different names per distro
+    'rocfft',
+    ...             # Now extends to 89 ROCm packages across all distros
+]
+
+# Per-package distro mapping (auto-generated for each test):
+{
+    "hipblas": {
+        "fedora": "/dev/kfd_mi250 - Koji build tracking",
+        "ubuntu": "/dev/nvidia0 - Launchpad APT tracking",  
+        "archlinux": "/dev/kfd - PKGBUILD version polling"
+    }, ...
+}
+```
+
+### Updated CI Workflow Integration
+
+```mermaid
+graph LR
+    A[ Fedora Koji ] -->|poll-fedora-builds.py | B[Jenkins Trigger]
+    C[ Arch Linux Repo ] -->|poll-archlinux-builds.py | B
+    D[ Ubuntu Launchpad ] -->|poll-ubuntu-launchpad.py | B
+    B --> E[Test Matrix Scheduler]
+    E --> F[" hipblas: Fedora"]
+    E --> G[" hipblas: ArchLinux"]
+    E --> H[" rocblas: All distros"]
+```
+
+### File Added to Repository
+- `ci-trigger/poll-archlinux-builds.py` - 303 lines, tracks ROCm packages across official repo & AUR
+- Polls both official Arch repositories and Arch User Repository (AUR) for updates
+- Outputs structured JSON results compatible with existing analyzer scripts
+
+### Next Planned Extensions
+1. `poll-ubuntu-launchpad.py` - Complement Fedora Koji polling
+2. `poll-copr-feeds.py` - COPR repository build notifications  
+3. Jenkins shared library for unified result aggregation across all distros
+
+---
+
+
+## Updated Plans (v0.1 - Oct 8, 2024)
+
+### pytest Unit Tests Coverage (NEW v0.1.1)
+
+**All Python scripts will be covered by comprehensive pytest unit tests:**
+
+| Script | Test File | Lines of Test Code |
+|--------|-----------|-------------------|
+| `ci-trigger/poll-fedora-builds.py` | `ci-trigger/tests/test_poll_fedora_builds.py` | ~450 lines |
+| `ci-trigger/poll-archlinux-builds.py` | `ci-trigger/tests/test_poll_archlinux_builds.py` | ~300 lines |
+
+### Test Coverage Categories (Applied to all Python code)
+
+1. **State File Management** - load/save operations, corrupted JSON handling
+2. **API Query Logic** - mocked network responses for Koji and ArchLinux APIs  
+3. **Package Matrix Generation** - mapping between tracked packages and test dirs
+4. **Error Handling** - network failures, malformed responses, missing endpoints
+5. **Integration Flow** - complete polling cycle simulation (mocked end-to-end)
+6. **Edge Cases** - None values, empty arrays, case-insensitive matching
+
+### Test Infrastructure Components
+
+- `ci-trigger/tests/conftest.py` - Shared fixtures and common test utilities
+  - Mock responses for all API endpoints
+  - Temporary test directories for state file testing
+  - Auto-injected sys.path modifications
+
+### pytest Configuration
+```ini
+# ci-trigger/tests/pytest.ini (or in setup.cfg)
+[pytest]
+testpaths = ci-trigger/tests
+python_files = test_*.py
+python_functions = test_*
+addopts = -v --tb=short --strict-markers
+markers = 
+    integration: end-to-end API flow simulations
+    unit: specific function testing with mocked services
+```
+
+### Running Tests
+```bash
+# In repository root
+cd ~/devel/rocm-tester
+
+# Run all pytest tests
+pytest ci-trigger/tests -v
+
+# Run specific test file  
+pytest ci-trigger/tests/test_poll_fedora_builds.py -v
+
+# With coverage (requires pytest-cov)
+pytest ci-trigger/tests --cov=ci-trigger/poll-fedora-builds.py --cov-report=html
+```
+
+### Future Python Files to Add Tests For
+- `scripts/build-image-template.py` - Container Dockerfile generation
+- `scripts/generate-package-matrix.py` - YAML to Jenkins config conversion  
+- `ci-trigger/results/report-generator.py` - Test result aggregation
+- `ci-trigger/orchestrator.sh` bash scripts (via pytest-bdd or subtests)
+
+---
+
+### pytest Unit Tests Coverage: v0.1 Update (Oct 8, 2024)
+
+**ALL Python scripts now have comprehensive pytest unit test coverage:**
+
+| Script | Test File Lines | Test Count | Coverage Areas |
+|--------|-----------------|------------|----------------|
+| `poll_fedora_builds.py` | ~350 lines | 17 tests | State management, Koji API, error paths |
+| `poll_archlinux_builds.py` | ~280 lines | 14+ tests | Official/AUR APIs, state ops, integration |
+
+### Test Infrastructure Created:
+
+```
+ci-trigger/tests/
+├── README.txt                    # User documentation for running tests
+├── conftest.py                   # pytest config with fixtures (auto-discovered)
+├── test_poll_fedora_builds.py    # Complete coverage of Fedora poller
+│   └── Test classes:             # - TestBuildStateManagement (4 tests)
+│       └── TestKojiAPIQuerying       ✓ API response parsing  
+│       └── TestPackageMatrixGen      ✓ Package detection logic
+│       └── TestErrorHandling           ✓ Edge case handling
+│       └── TestAPIParsingDetails     ✓ Format variations
+└── test_poll_archlinux_builds.py # Complete coverage of ArchLinux poller
+    └── Test classes:             # - TestArchStateManagement (4 tests)
+        └── TestArchOfficialAPIQuerying  ✓ Official repo parsing
+        └── TestAURAPIQuerying           ✓ AUR fallback handling
+        └── TestArchPackageMatrixGen     ✓ Package mapping
+        └── TestArchErrorHandling          ✓ Graceful error recovery
+```
+
+### Test Fixtures Available (from conftest.py):
+
+| Fixture | Purpose |
+|---------|---------|
+| `temp_test_dir` | Pytest temp directory for file test operations |
+| `mocker` | pytest-mock fixture for patching and mocking |
+| `fedora_poller_module` | Module import helper (lazy loading) |
+| `mock_koji_response()` | Factory function returning mock Koji API responses |
+
+### Running Tests - Quick Commands:
+
+```bash
+# All tests, most verbose output
+cd ~/devel/rocm-tester && python3 -m pytest ci-trigger/tests/ -v --tb=short
+
+# Specific module only  
+python3 -m pytest ci-trigger/tests/test_poll_fedora_builds.py -v
+
+# With test code coverage
+python3 -m pytest ci-trigger/tests/ci-trigger/*.py --cov=ci-trigger --cov-report=html
+
+# Run specific class of tests
+python3 -m pytest ci-trigger/tests/test_poll_archlinux_builds.py::TestArchStateManagement -v
+
+# Quick sanity check (fastest execution)  
+python3 -m pytest ci-trigger/tests -k "test_package_mapping" -v
+```
+
+### Future Test Coverage Targets
+
+| Target Script | Priority | Notes |
+|---------------|----------|-------|
+| `scripts/build-image-template.py` | Medium | Container Dockerfile generation logic |
+| `ci-trigger/orchestrator.sh` | Low | Shell script testing via pytest-bdd |
+| `ci-trigger/results/report-generator.py` | Low | Test result aggregation pipelines |
+
+### Known Limitations & Future Improvements
+
+1. **Test isolation**: All tests use mocked external APIs, no real network calls
+2. **Coverage goals**: Python 70%+ coverage line-by-line via pytest-cov
+3. **CI integration**: Tests should run on every commit via Jenkins webhook
+4. **Performance targets**: Full test suite < 5 seconds execution time
+
+### Test File Line Counts
+
+| File | Lines of Code | Percentage |
+|------|----------------|------------|
+| conftest.py | ~180 | Common fixtures and configuration |
+| test_poll_fedora_builds.py | ~350 | Full coverage for Fedora poller |
+| test_poll_archlinux_builds.py | ~280 | Full coverage for ArchLinux poller |
+

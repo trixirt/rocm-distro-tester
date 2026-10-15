@@ -1,382 +1,301 @@
 #!/usr/bin/env python3
 """
-Ubuntu Launchpad Build Poller for ROCm Packages
+Ubuntu ROCm Package Poller via Docker Container
 
-Monitors Ubuntu Launchpad repositories and build results for new package builds of tracked ROCm packages.
-Records last-checked version to enable efficient incremental polling.
+Monitors Ubuntu packages using containerized apt commands.
+Pattern aligned with: /home/trix/rocm/rocm-distro-containers/ubuntu/latest/apt/
 
 Usage:
-    poll-ubuntu-builds.py [options]
+    poll_ubuntu_builds.py [options]
 
 Options:
-    --package PKGNAME       Specific package to check (default: hipblas)
-    --list-packages         Show all tracked ROCm packages
-    -f, --file STATEFILE    State file location (default: ci-trigger/results/ubuntu_build_state.json)
-    --all                   Check all tracked packages
+    -p, --package PKGNAME       Specific package to check (default: hipblas)
+    -f, --file STATEFILE        State file location 
+    -l, --list-packages         Show all tracked ROCm packages
+    -a, --all                   Check all tracked packages (default)
 
-Launchpad API Endpoints Used:
-    https://launchpad.net/~ubuntu-toolchain-r/+archive/ubuntu/test/builds  # Example ROCm PPA path
-    https://launchpad.net/api/1.0/packages/                           # General package search API
+Query Method:
+    docker run ubuntu:latest apt-get update && apt-cache show {package}
     
-Known Ubuntu Repository Sources for ROCm packages:
-    - Official Ubuntu repositories (main/universe/restricted)
-    - Ubuntu Toolchain R PPAs (https://launchpad.net/~ubuntu-toolchain-r/+archive/ubuntu/)
-    - AMD ROCm PPA (when available at https://launchpad.net/~rocm/+archive/ubuntu/main)
+Author: ROCm-Distro-Tester Team
+Version: 0.6.0 (Docker-based with apt queries)
 """
 
-import requests
 import json
+import subprocess
 import argparse
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 
+# ==========================================================================
+# CONFIGURATION - ALIGNED WITH USER'S UBUNTU CONTAINER SETUP
+# ==========================================================================
 
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-
-# Tracked ROCm packages - same packages monitored as Fedora (with Ubuntu package names)
 TRACKED_UBUNTU_ROCM_PACKAGES = [
-    'hipblas',          # hipblas-dev in Ubuntu packaging
-    'rocblas',          # rocblas-dev 
-    'rocsolver',        # rocsolver-dev
-    'syclone',          # ROCm SYCL compiler (when available)
-    'rocm-opencl',      # OpenCL runtime for AMD GPUs
-    'hip',              # HIP toolkit runtime
-    'rocminfo',         # Device information utility
+    'hipblas',        # HIP Basic Linear Algebra Subroutine (Ubuntu package)
+    'rocblas',        # ROC BLAS 
+    'rocsolver',      # ROC Solver
+    'hipsolver',      # HIP solver
+    'hipfft',         # HIP FFT library
+    'rocfft',         # ROC FFT library
+    'hip',            # HIP toolkit
+    'rocm-opencl',    # ROCm OpenCL implementation
 ]
 
-# Ubuntu release tracking (rolling equivalent: latest development release)
-# Options include: focal (20.04), jammy (22.04), noble (24.04), oracular (24.10)
-UBUNTU_RELEASE_TRACKING = {
-    'latest':        'oracular',  # Current development release (rolling equivalent)
-    'lts':           'noble',     # Latest LTS version (4 years support)
-    'previous_lts':  'jammy'      # Previous LTS (also widely used)
+# Ubuntu Docker images for different releases (matches user's pattern)
+UBUNTU_IMAGES = {
+    'latest': 'ubuntu:latest',       # Rolling dev release
+    'noble':  'ubuntu:noble',        # Ubuntu 24.04 LTS (most current stable)
+    'jammy':  'ubuntu:jammy',        # Ubuntu 22.04 LTS (widely used)
+    'focal':  'ubuntu:focal',        # Ubuntu 20.04 LTS (legacy support)
 }
 
-DEFAULT_RELEASE = UBUNTU_RELEASE_TRACKING['latest']
-
-# Launchpad API URLs for package information
-# Note: Launchpad doesn't provide a simple packages search API like Koji
-# Instead we check version data from Ubuntu package repository listings or official docs
-LAUNCHPAD_PPKG_LIST_URL = "https://raw.githubusercontent.com/canonical/ubuntu-package-data/master/debian/pool/main"
-
-def query_ubuntu_package_info(package_name, release):
-    """
-    Query Ubuntu for package info. Since Launchpad API is limited, 
-    we check: 1) Official repositories via apt cache, OR 2) Manual lookups
-    This function returns None during automated CI (network restrictions)
-    
-    Production use would connect to:
-    - launchpad.net/~ubuntu-toolchain-r/+archive/ubuntu/test/builds
-    - Or direct Ubuntu archive package listing: archive.ubuntu.com/pool/...  
-    """
-    # For CI/testing scenarios, simulate package version lookup
-    return {
-        "package": package_name.capitalize(), 
-        "version": f"1.0-{release[:3]}~ubuntu24.04",
-        "release": release,
-        "repository": "ubuntu-manual-check-required",
-        "timestamp": str(datetime.now()),
-        "architecture": "amd64"
-    }
-LAUNCHPAD_ARCHIVE_URL = f"https://launchpad.net/~ubuntu-toolchain-r/+archive/ubuntu/test"
-ROCM_UBUNTU_PPA = "https://raw.githubusercontent.com/RadeonOpenCompute/rocm-ubuntu/master/Packages"
-
-# State tracking file (stores last version checked per package for Ubuntu)
+DEFAULT_UBUNTU_VERSION = 'latest'
 DEFAULT_STATE_FILE = Path(__file__).parent / 'results' / 'ubuntu_build_state.json'
 
+# ==========================================================================
+# STATE MANAGEMENT FUNCTIONS
+# ==========================================================================
 
-# =============================================================================
-# HELPER FUNCTIONS: Load and Save Build State (matches Fedora pattern)
-# =============================================================================
-
-def load_ubuntu_package_state(state_file: Path) -> Dict[str, str]:
-    """Load previous Ubuntu package version state from file or return empty dict."""
-    if state_file.exists():
-        try:
-            with open(state_file, 'r') as f:
-                saved_state = json.load(f)
-                # Track last_version per package for incremental checking
-                return {
-                    pkg_name: pkg.get('last_version', '') 
-                    for pkg in saved_state
-                }
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"Warning: Could not parse Ubuntu state file, starting fresh: {e}")
-    return {}
-
-
-def save_ubuntu_package_state(state_file: Path, new_builds: List[Dict]):
-    """Save updated package state to disk for next polling cycle."""
-    if not new_builds:
-        # No changes detected, preserve existing state
-        saved_state = load_ubuntu_package_state(state_file)
-        with open(state_file, 'w') as f:
-            json.dump(list(saved_state.values()), f, indent=2)
-        return
-    
-    updated_state = {}
-    
-    if state_file.exists():
-        try:
-            saved_state = load_ubuntu_package_state(state_file)
-        except:
-            saved_state = {}
+def load_build_state(state_file: Path) -> Dict[str, Any]:
+    """Load previous Ubuntu package state from file or return empty dict."""
+    if not state_file.exists():
+        return {}
         
-        # Merge with new changes
-        updated_state = dict(saved_state)
+    try:
+        with open(state_file, 'r') as f:
+            saved = json.load(f)
+            if isinstance(saved, list):
+                return {pkg.get('name', pkg.get('package', '')): pkg.get('last_version', '') 
+                        for pkg in saved if pkg}
+            elif isinstance(saved, dict):
+                return saved
+            return {}
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        print(f"Warning: Could not parse Ubuntu state file {state_file}: {e}")
+        return {}
+
+
+def save_build_state(state_file: Path, new_builds: List[Dict]) -> None:
+    """Save updated build state to disk."""
+    if not new_builds:
+        print("No updates to save.")
+        return
+        
+    raw_existing = load_build_state(state_file)
     
-    # Update with new version data for each package found
+    existing = {}
+    for pkg, value in raw_existing.items():
+        if isinstance(value, str):
+            existing[pkg] = {'package': pkg, 'last_version': value, 'timestamp': None}
+        elif isinstance(value, dict):
+            existing[pkg] = value
+    
     for build in new_builds:
-        pkg_name_lower = build['package'].lower()
-        updated_state[pkg_name_lower] = {
+        pkg_name = build['package'].lower()
+        existing[pkg_name] = {
             'package': build['package'],
-            'ubuntu_version': build.get('version', 'unknown'),
-            'build_timestamp': build.get('timestamp', ''),
-            'repository': build.get('repository', 'unknown')
+            'last_version': str(build.get('last_version', '')),
+            'timestamp': build.get('timestamp', datetime.now().isoformat()),
         }
     
+    state_file.parent.mkdir(parents=True, exist_ok=True)
     with open(state_file, 'w') as f:
-        json.dump(list(updated_state.values()), f, indent=2)
-
-
-# =============================================================================
-# Query Ubuntu Launchpad API for Package Information (distro-specific logic)
-# =============================================================================
-
-def query_ubuntu_launchpad_api(package_name: str, release: str = DEFAULT_RELEASE) -> Optional[Dict]:
-    """Query Ubuntu for package version info in specified release."""
+        json.dump(list(existing.values()), f, indent=2)
     
-    # Note: Launchpad API doesn't support simple name+dist search like Koji did
-    # This function simulates successful query for CI integration testing purposes
+    print(f"Saved Ubuntu package build state to {state_file}")
+
+# ==========================================================================
+# QUERY FUNCTION - APT CONTAINER QUERY (USER'S PATTERN)  
+# ==========================================================================
+
+def query_ubuntu_package(package_name: str, release: str = DEFAULT_UBUNTU_VERSION):
+    """
+    Query Ubuntu ROCm package info using Docker container with apt.
+    
+    Pattern matches: /home/trix/rocm/rocm-distro-containers/ubuntu/latest/apt/test.sh
+    
+    Usage inside container: 
+        apt-get update                       # Refresh package database
+        apt-cache show {package}             # Show details (includes version)
+        
+    Args:
+        package_name: Name of the package to query
+        release: Ubuntu release name (latest, noble, jammy, focal)
+        
+    Returns:
+        Dict with package metadata including version/info,
+        or None if package not found or error occurs.
+    """
+    
+    docker_image = UBUNTU_IMAGES.get(release, 'ubuntu:latest')
     
     try:
-        # Try to query actual Ubuntu package repository data
-        api_url = f"https://api.launchpad.net/1.0/debian/+archive/ubuntu/{release}"
+        # Pattern exactly from user's test.sh approach - update then query
+        cmd = f'apt-get update >/dev/null 2>&1 && apt-cache show "{package_name}"'
         
-        response = requests.get(api_url, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
+        result = subprocess.run(
+            ['docker', 'run', '--rm', docker_image, 'sh', '-c', cmd],
+            capture_output=True,
+            text=True,
+            timeout=300  # Long timeout for apt update + query
+        )
         
-        # Search for matching package in results
-        if 'packages' in data and len(data['packages']) > 0:
-            pkg_info = data['packages'][0]
+        if result.returncode == 0 and package_name.lower() in result.stdout.lower():
+            output = result.stdout
             
-            return {
-                'package': package_name.capitalize(),
-                'version': pkg_info.get('version', 'unknown'),
-                'release': release,
-                'repository': 'ubuntu-official-repository',
-                'timestamp': str(datetime.now()),
-                'architecture': pkg_info.get('binary_package_name', 'x86_64')
-            }
-        
-        # If not found in official repos, try PPA repositories
-        
-        # Check AMD ROCm Ubuntu PPA (if maintained)
-        try:
-            rocm_ppa_url = f"https://raw.githubusercontent.com/RadeonOpenCompute/rocm-ubuntu/{release}/Packages"
-            ppa_response = requests.get(rocm_ppa_url, timeout=10)
+            # Parse apt-cache show output format (similar to dnf/pacman):
+            # Package: hipblas
+            # Version: 12.3.4-5ubuntu1
+            # Architecture: amd64
+            # ... etc
             
-            if ppa_response.status_code == 200:
-                packages_list = ppa_response.text.split('\n')
-                
-                # Search for package entry (format: PackageName-Version-Architecture)
-                for line in packages_list:
-                    if line.startswith(f"{package_name.lower()}-"):
-                        parts = line.split('-')
-                        if len(parts) >= 2:
-                            return {
-                                'package': package_name.capitalize(),
-                                'version': f"{parts[1]}-{parts[-1]}",  # Version-Arch format
-                                'release': release,
-                                'repository': 'AMD-ROCm-PPA',
-                                'timestamp': str(datetime.now()),
-                                'architecture': parts[-1] if len(parts) > 2 else 'unknown'
-                            }
-        except Exception as e:
-            print(f"Warning: Could not query AMD ROCm PPA: {e}")
+            version = pkg_name = None
+            for line in output.splitlines():
+                if ':' in line.strip():
+                    key, val = line.split(':', 1)
+                    key = key.strip().lower()
+                    val = val.strip()
+                    
+                    if key == 'package':
+                        pkg_name = val
+                    elif key == 'version':
+                        version = val
+            
+            if version and pkg_name:
+                return {
+                    'package': pkg_name,
+                    'last_version': version,              # Version as state identifier
+                    'ubuntu_release': release,
+                    'timestamp': datetime.now().isoformat(),
+                    'source': f'Ubuntu {release}',
+                }
         
-    except requests.exceptions.RequestException as e:
-        print(f"Error querying Ubuntu Launchpad for package {package_name}: {e}")
-    
-    return None
-
-
-# =============================================================================
-# Package Matrix Generation (Ubuntu-specific, follows Fedora pattern)
-# =============================================================================
-
-def generate_ubuntu_package_mapping() -> List[Dict]:
-    """Generate mapping between tracked packages and test directories for Ubuntu."""
-    
-    # Define Ubuntu-to-test mapping (similar to Fedora generate_package_matrix but Ubuntu-specific)
-    ubuntu_package_config = {
-        'hipblas': ('hipblas', 'hipblas-ubuntu-test'),
-        'rocblas': ('rocblas', 'rocblas-ubuntu-test'),  
-        'rocsolver': ('rocsolver', 'rocsolver-ubuntu-test'),
-        'hip': ('hip', 'hip-toolbox-test'),
-        'rocminfo': ('rocminfo', 'rocm-device-info-test'),
-    }
-    
-    mapping_list = []
-    
-    for pkg in TRACKED_UBUNTU_ROCM_PACKAGES:
-        mapping_list.append({
-            'package_name': pkg.lower(),
-            'package_display': pkg.capitalize(),
-            'test_dir': ubuntu_package_config.get(pkg, (pkg, f'{pkg}-ubuntu-test'))[-1],
-            'release_version': DEFAULT_RELEASE,
-            # Ubuntu-specific package naming (deb packages have version patterns)  
-            'version_pattern': '*_amd64.deb'  # Architecture-specific builds
-        })
-    
-    return mapping_list
-
-
-def generate_ubuntu_test_matrix() -> List[Dict]:
-    """Generate combined test matrix for Ubuntu ROCm packages including release info."""
-    
-    mapping = []
-    
-    for pkg in TRACKED_ROCM_PACKAGES:
-        # Find matching Ubuntu package
-        ubuntu_mapping = None
+        if result.returncode != 0:
+            print(f"Package '{package_name}' not found via apt-cache")
+            return None
         
-        for ubuntu_pkg in TRACKED_UBUNTU_ROCM_PACKAGES:
-            if ubuntu_pkg.lower() == pkg.lower():
-                ubuntu_mapping = generate_ubuntu_package_mapping()
-                break
+        print(f"Package '{package_name}' query returned empty output")
+        return None
         
-        if ubuntu_mapping:
-            mapping.append({
-                'package_name': pkg,
-                'test_type': 'smoke-tests',
-                'distro': 'ubuntu',
-                'release_variant': DEFAULT_RELEASE,
-                'test_dir': ubuntu_mapping['test_dir'],
-                'packages_to_verify': [pkg + '-dev', pkg]  # Ubuntu uses -dev for development packages
-            })
-    
-    return mapping
+    except subprocess.TimeoutExpired:
+        print(f"  Timeout querying {package_name}")
+        return None
+    except FileNotFoundError:
+        print("  Error: Docker not available")
+        return None
+    except Exception as e:
+        print(f"  Error query: {e}")
+        return None
 
 
-# =============================================================================
-# Main Execution: Poller Orchestrator (matches Fedora pattern logic)
-# =============================================================================
+# ==========================================================================
+# MAIN EXECUTION FUNCTION
+# ==========================================================================
 
-def main():
-    """Main entry point for Ubuntu ROCm package build tracking."""
-    
+def get_parser() -> argparse.ArgumentParser:
+    """Configure argument parser."""
     parser = argparse.ArgumentParser(
-        description='Poll Ubuntu repositories for ROCm package updates'
-    )
+        prog='poll_ubuntu_builds.py',
+        description='Poll Ubuntu ROCm packages using apt queries in containers',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Workflow (matching your container setup):
+  # Container build (your pattern)
+  cd /home/trix/rocm/rocm-distro-containers/ubuntu/latest/apt && ./run.sh
+  
+  # Query packages programmatically
+  python3 poll_ubuntu_builds.py -p hipblas                 # Poll Ubuntu (default)
+  python3 poll_ubuntu_builds.py --release noble -p rocblas # Specific release""")
+
+    parser.add_argument('-p', '--package', type=str, default='hipblas',
+                        help='Specific package to check (default: hipblas)')
+    parser.add_argument('-l', '--list-packages', action='store_true', 
+                        help='List all tracked Ubuntu ROCm packages')
+    parser.add_argument('-f', '--file', type=str, default=None,
+                        help='Custom state file path'),
+    parser.add_argument('-r', '--release', choices=['latest', 'noble', 'jammy', 'focal'], 
+                        type=str, default='latest',
+                        help='Ubuntu release version: latest, noble, jammy, focal (default: latest)'),
+    parser.add_argument('-a', '--all', action='store_true',
+                        help='Check all tracked packages (default behavior)')
+
+    return parser
+
+
+def main() -> int:
+    """
+    Main entry point for package build tracking.
     
-    parser.add_argument('-p', '--package', 
-        action='store',
-        help='Specific package to check (default: all tracked packages)'
-    )
-    parser.add_argument('-l', '--list-packages', 
-        action='store_true',
-        default=False,
-        help='Show all tracked Ubuntu ROCm packages'
-    )
-    parser.add_argument(
-        '--file', '-f', 
-        type=Path, 
-        help='State file path'
-    )
-    parser.add_argument(
-        '--release', '-r',
-        type=str,
-        default='latest',
-        choices=['latest', 'lts', 'focal', 'jammy', 'noble', 'oracular'],
-        help='Ubuntu release version to check (default: latest)'
-    )
+    Follows pattern from /home/trix/rocm/rocm-distro-containers/ubuntu/latest/apt/
+    - Uses ubuntu:{release} Docker containers (your method)
+    - Uses apt-get update && apt-cache show queries (your method)
+    """
+    args = get_parser().parse_args()
     
-    args = parser.parse_args()
+    state_file = Path(args.file) if args.file else DEFAULT_STATE_FILE
     
-    # Initialize paths
-    release_version = UBUNTU_RELEASE_TRACKING.get(args.release, DEFAULT_RELEASE)
-    state_file = args.file or DEFAULT_STATE_FILE
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    print(f"=== Ubuntu Launchpad Package Build Poller ===")
+    print(f"=== Ubuntu ROCm Package Poller ===")
+    print(f"Ubuntu release: {args.release}")
+    print(f"Docker image: {UBUNTU_IMAGES[args.release]}")
     print(f"Timestamp: {datetime.now().isoformat()}")
-    print(f"Check release: {release_version}")
     print(f"State file: {state_file}")
     
-    # Determine which packages to check
-    check_list = []
-    
-    if args.package:
-        check_list = [args.package]
-    elif args.list_packages:
-        check_list = TRACKED_UBUNTU_ROCM_PACKAGES
-    else:
-        check_list = TRACKED_UBUNTU_ROCM_PACKAGES
-    
     # Show package list if requested
-    if args.list_packages or any('--package' in c for c in [args.package] + ['']):
-        print(f"\n✓ Tracked ROCm packages on Ubuntu ({release_version}):")
+    if args.list_packages:
+        print("\n✓ Tracked ROCm packages on Ubuntu:")
         for pkg in TRACKED_UBUNTU_ROCM_PACKAGES:
             print(f"   - {pkg}")
+        return 0
     
-    # Poll for package updates
-    new_updates_detected = []
-    no_changes_detected = True
+    saved_raw = load_build_state(state_file)
+    saved = {}
+    for pkg, data in saved_raw.items():
+        if isinstance(data, dict):
+            saved[pkg] = data.get('last_version', '')
+        else:
+            saved[pkg] = str(data)
     
-    for pkg in check_list:
-        print(f"\nChecking Ubuntu package: {pkg} release:{release_version}")
+    queries = [args.package] if args.package else TRACKED_UBUNTU_ROCM_PACKAGES
+    
+    new_builds_detected = []
+    no_changes = True
+    
+    for pkg_name in queries:
+        print(f"\nChecking package: {pkg_name}")
         
-        latest = query_ubuntu_launchpad_api(pkg, release_version)
+        latest = query_ubuntu_package(pkg_name, args.release)
         
         if not latest:
+            print(f"  Not found or unavailable")
             continue
         
-        # Compare against previously saved version
-        last_version = load_ubuntu_package_state(state_file).get(pkg, {}).get('last_version', '')
-        current_version = latest.get('version', 'unknown')
+        last_version = saved.get(pkg_name.lower(), '')
+        current_version = latest.get('last_version', '')
         
-        print(f"  Previously checked (Ubuntu build): {last_version}")
+        print(f"  Last checked: {last_version}")
         print(f"  Current version: {current_version}")
-        print(f"  Repository: {latest.get('repository', 'unknown')}")
         
-        # If versions differ, this is a new update detected
-        if last_version != current_version and current_version != 'unknown':
-            new_updates_detected.append(latest)
-            no_changes_detected = False
-            
-            # Map to appropriate test directory for Ubuntu-specific testing
-            for config in generate_ubuntu_package_mapping():
-                if config['package_name'].lower() == pkg.lower():
-                    latest['ubuntu_test_dir'] = config.get('test_dir', 'unknown')
-                    print(f"  📁 Ubuntu test directory: {config.get('test_dir', 'unknown')}")
-                    break
+        if last_version != current_version:
+            new_builds_detected.append(latest)
+            no_changes = False
     
-    # Save state with any new updates detected
-    save_ubuntu_package_state(state_file, new_updates_detected)
+    save_build_state(state_file, new_builds_detected)
     
-    # Output final status
-    if no_changes_detected:
-        print("\n✅ No Ubuntu package version updates detected for tracked packages.")
+    if no_changes:
+        print("\n✅ No Ubuntu package version updates detected.")
         return 0
     else:
-        count = len(new_updates_detected)
-        print(f"\n🎉 {count} Ubuntu package update(s) detected!")
-        
-        for build in new_updates_detected:
-            repo = build.get('repository', 'unknown')[:20]  # Truncate for readability
-            version = build.get('version', 'unknown')
-            release = build.get('release', release_version)[:10]
-            test_dir = build.get('ubuntu_test_dir', 'N/A')
-            
-            print(f"   - {build['package']}: v{version} ({repo}) on {release} → Test: {test_dir}")
-        
-        return 1  # Signal that new builds need processing
+        print(f"\n🎉 {len(new_builds_detected)} Ubuntu version(s) detected!")
+        for build in new_builds_detected:
+            pkg_name = build.get('package', 'unknown')
+            ver = build.get('last_version', 'X')
+            release = build.get('ubuntu_release', 'latest')
+            print(f"   - {pkg_name}: {ver} (Ubuntu {release})")
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    exit_code = main()
+    sys.exit(exit_code)

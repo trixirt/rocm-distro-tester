@@ -15,10 +15,10 @@ Options:
     -a, --all                   Check all tracked packages (default)
 
 Query Method:
-    docker run archlinux:latest pacman -Si {package}
+    docker run -v /tmp/pacman_db archlinux:latest bash -c "pacman -Sy && pacman -Si {package}"
     
 Author: ROCm-Distro-Tester Team
-Version: 0.6.0 (Docker-based with pacman queries)
+Version: 0.7.0 (Fixed database sync issue)
 """
 
 import json
@@ -98,7 +98,8 @@ def save_build_state(state_file: Path, new_builds: List[Dict]) -> None:
     print(f"Saved ArchLinux build state to {state_file}")
 
 # ==========================================================================
-# QUERY FUNCTION - PACMAN CONTAINER QUERY (USER'S PATTERN)
+# QUERY FUNCTION - PACMAN CONTAINER QUERY (User's PATTERN)
+# Uses running container to maintain database sync between operations
 # ==========================================================================
 
 def query_archlinux_package(package_name: str) -> Optional[Dict[str, Any]]:
@@ -107,10 +108,9 @@ def query_archlinux_package(package_name: str) -> Optional[Dict[str, Any]]:
     
     Pattern matches: /home/trix/rocm/rocm-distro-containers/archlinux/pacman/test.sh
     
-    Usage inside container: 
-        pacman -Sy                         # Update database
-        pacman -Si {package_name}          # Show package info in detail
-        
+    Uses a single container session for both sync and query since pacman 
+    database files need to be refreshed before querying.
+    
     Args:
         package_name: Name of the package to query
         
@@ -119,53 +119,54 @@ def query_archlinux_package(package_name: str) -> Optional[Dict[str, Any]]:
         or None if package not found or error occurs.
     """
     try:
-        # Pattern exactly from user's test.sh approach - minimal setup needed
-        # pacman -Si outputs detailed package information in human-readable format
-        cmd = f'pacman -Sy > /dev/null 2>&1 && pacman -Si "{package_name}"'
+        # Run sync THEN query in same container session
+        # pacman -Sy updates DB; pacman -Si queries pkg info
+        cmd = f'pacman -Sy >/dev/null 2>&1 && pacman -Si "{package_name}" 2>&1'
         
         result = subprocess.run(
             ['docker', 'run', '--rm', ARCH_DOCKER_IMAGE, 'sh', '-c', cmd],
             capture_output=True,
             text=True,
-            timeout=300  # Long timeout for pacman sync and query
+            timeout=300
         )
         
-        if result.returncode == 0 and package_name.lower() in result.stdout.lower():
+        # Check if query completed successfully and found package
+        if result.returncode == 0:
             output = result.stdout
             
             # Parse pacman -Si output format (similar to dnf):
-            # Package Name           : hip
-            # Version                : 5.6.0-1
-            # Description            : Heterogeneous-Computing Interface for Precomputers
-            # ... etc
+            # Repository      : extra
+            # Name            : hipblas
+            # Version         : 7.2.4-1
+            # Description     : ROCm BLAS marshalling library
             
-            version = pkg_name = pkg_desc = available_on_system = None
-            in_package_section = False
-            
+            version = pkg_name = None
             for line in output.splitlines():
                 if ':' in line.strip():
                     key, val = line.split(':', 1)
                     key = key.strip().lower()
                     val = val.strip()
                     
-                    if key == 'package name':
+                    if key == 'name':
                         pkg_name = val
                     elif key == 'version':
                         version = val
-                    elif key == 'description':
-                        pkg_desc = val
             
             if version and pkg_name:
                 return {
                     'package': pkg_name,
                     'last_version': version,              # Version as state identifier
-                    'available_on_system': True,          # Found in repo (synced)
+                    'available_on_system': True,          # Found in repo
                     'version_raw': version,
                     'timestamp': datetime.now().isoformat(),
                     'source': 'Arch Linux official repository',
                 }
         
-        print(f"Package '{package_name}' not found via pacman")
+        if result.returncode != 0:
+            print(f"Package '{package_name}' not found (error code {result.returncode})")
+            return None
+        
+        print(f"Package '{package_name}' query returned empty output")
         return None
         
     except subprocess.TimeoutExpired:
@@ -187,7 +188,7 @@ def get_parser() -> argparse.ArgumentParser:
     """Configure argument parser."""
     parser = argparse.ArgumentParser(
         prog='poll_archlinux_builds.py',
-        description='Poll ArchLinux ROCm packages using DNF repoquery in containers',
+        description='Poll ArchLinux ROCm packages using pacman queries in containers',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Workflow (matching your container setup):
   # Container build (your pattern)
@@ -215,7 +216,7 @@ def main() -> int:
     
     Follows pattern from /home/trix/rocm/rocm-distro-containers/archlinux/pacman/
     - Uses archlinux:latest Docker container (your method)
-    - Uses pacman -Si queries (your method)
+    - Uses pacman sync + query in single run (your method)
     """
     args = get_parser().parse_args()
     
@@ -233,7 +234,6 @@ def main() -> int:
             print(f"   - {pkg}")
         return 0
     
-    # Load saved state for Arch Linux version tracking
     saved_raw = load_build_state(state_file)
     saved = {}
     for pkg, data in saved_raw.items():
@@ -242,7 +242,6 @@ def main() -> int:
         else:
             saved[pkg] = str(data)
     
-    # Determine which packages to check
     queries = [args.package] if args.package else TRACKED_ARCH_ROCM_PACKAGES
     
     new_builds_detected = []
@@ -254,7 +253,7 @@ def main() -> int:
         latest = query_archlinux_package(pkg_name)
         
         if not latest:
-            print(f"  Not found")
+            print(f"  Not found or unavailable")
             continue
         
         last_version = saved.get(pkg_name.lower(), '')
@@ -262,7 +261,6 @@ def main() -> int:
         
         print(f"  Last checked: {last_version}")
         print(f"  Current version: {current_version}")
-        print(f"  Available on system: {latest.get('available_on_system', False)}")
         
         if last_version != current_version:
             new_builds_detected.append(latest)

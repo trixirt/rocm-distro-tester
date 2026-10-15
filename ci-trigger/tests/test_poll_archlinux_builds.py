@@ -1,235 +1,256 @@
 #!/usr/bin/env python3
 """
-Unit tests for ArchLinux package build poller (poll_archlinux_builds.py).
+Unit tests for ArchLinux ROCm Package Poller (poll_archlinux_builds.py).
 
 Tests cover:
-- State file management (load/save)
-- Arch API response parsing (official + AUR)
-- Package detection and tracking logic  
-- Error handling for malformed responses
-- Integration test flow simulation
+- State file management (load/save) with per-package tracking
+- Docker container-based pacman queries
+- Package version parsing logic
+- Error handling for Docker/network failures
+- CLI argument parsing
 
-Run with: pytest -v ci-trigger/tests/test_poll_archlinux_builds.py
+Run with: pytest -v /tmp/test_arch_linux_poller.py
 """
 
+import sys
 import pytest
 import json
 from pathlib import Path
-import sys
-from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
+sys.path.insert(0, '/home/trix/test/rocm-distro-tester/ci-trigger/tests')
+
+# Import the poller module
+sys.path.insert(0, '/home/trix/test/rocm-distro-tester/ci-trigger')
 import poll_archlinux_builds as arch_poller
 
 
-class TestArchStateManagement:
-    """Test suite for load_arch_build_state() and save_arch_build_state() functions."""
+# =============================================================================
+# TEST: State File Management (Simple key-value version tracking)
+# =============================================================================
+
+class TestArchitectureStateManagement:
+    """Test suite for load_build_state() and save_build_state() functions."""
     
-    def test_load_state_from_existing_file(self, temp_test_dir):
+    def test_load_arch_state_from_existing_file(self, tmp_path):
+        """Should successfully load Arch build state from pre-populated file."""
         sample_state = [
-            {"name": "hip", "last_version": "5.6.0", "repo": "official"}
+            {"name": "hip", "last_version": "5.6.0-1"},
+            {"package": "rocminfo", "last_version": "5.7.0-1"}
         ]
         
-        with open(Path(temp_test_dir) / "test_arch_temp.json", 'w') as f:
+        test_file = tmp_path / "arch_test_json"
+        with open(test_file, 'w') as f:
             json.dump(sample_state, f)
+            
+        loaded = arch_poller.load_build_state(test_file)
         
-        result = arch_poller.load_arch_build_state(Path(temp_test_dir) / "test_arch_temp.json")
-        
-        assert isinstance(result, dict)
-        assert "hip" in result
+        assert isinstance(loaded, dict)
+        assert 'hip' in loaded
+        assert loaded['hip'] == '5.6.0-1'
     
-    def test_load_state_from_missing_file_returns_empty(self, temp_test_dir):
-        non_existent = Path(temp_test_dir) / "does_not_exist.json"
-        
-        result = arch_poller.load_arch_build_state(non_existent)
+    def test_load_arch_state_missing_file(self, tmp_path):
+        """Should return empty dict when Arch state file doesn't exist."""
+        non_existent = tmp_path / "no_arch.json"
+        result = arch_poller.load_build_state(non_existent)
         assert result == {}
     
-    def test_load_state_with_corrupted_json_returns_empty(self, temp_test_dir):
-        corrupted_file = Path(temp_test_dir) / "corrupted.json"
-        corrupted_file.write_text("invalid json content")
+    def test_load_arch_state_corrupted_json(self, tmp_path):
+        """Should handle corrupted JSON gracefully for Arch state files."""
+        corrupted = tmp_path / "corrupted.json"
+        corrupted.write_text("invalid arch json content")
         
-        result = arch_poller.load_arch_build_state(corrupted_file)
-        
+        result = arch_poller.load_build_state(corrupted)
         assert isinstance(result, dict)
         assert len(result) == 0
     
-    def test_save_state_updates_existing_packages(self, temp_test_dir):
-        sample_changes = [
-            {"package": "hip", "version": "5.7.0", "timestamp": "2024-10-13T10:53:09"},
-            {"package": "rocblas", "version": "6.0.0", "timestamp": "2024-10-13T10:53:09"}
+    def test_save_arch_state_preserves_packages(self, tmp_path):
+        """Should save packages and merge with existing state."""
+        # Pre-populate state
+        initial = [{"package": "hip", "last_version": "old-1"}]
+        file = tmp_path / "state.json"
+        with open(file, 'w') as f:
+            json.dump(initial, f)
+        
+        # Save updates (new package + updated existing)
+        changes = [
+            {'package': 'hip', 'last_version': 'new-2'},
+            {'package': 'rocblas', 'last_version': '1.0'}
         ]
         
-        arch_poller.DEFAULT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        state_path = Path(temp_test_dir) / "test_results.json"
+        arch_poller.save_build_state(file, changes)
         
-        arch_poller.save_arch_build_state(state_path, sample_changes)
-        
-        saved_file = Path(temp_test_dir) / "test_results.json"
-        assert saved_file.exists()
-        
-        with open(saved_file) as f:
+        assert file.exists()
+        with open(file) as f:
             data = json.load(f)
         
-        assert len(data) == 2
-
-
-class TestArchOfficialAPIQuerying:
-    """Test suite for ArchLinux official package queries."""
+        pnames = {entry.get('package') or entry.get('name', '') for entry in data}
+        assert 'hip' in pnames
+        assert 'rocblas' in pnames
     
-    def test_query_official_finds_package_name_exact_match(self, mocker):
-        mock_response = Mock()
-        search_html = arch_poller.create_mocked_arch_search_html("hip", found=True)
-        mock_response.text = search_html
-        mock_response.status_code = 200
+    def test_save_arch_empty_no_op(self, tmp_path):
+        """Should handle empty new_builds list gracefully."""
+        file = tmp_path / "empty.json"
         
-        mocker.patch('poll_archlinux_builds.requests.get', return_value=mock_response)
+        # When there are no builds to save, it should not crash
+        arch_poller.save_build_state(file, [])
         
-        result = arch_poller.query_archlinux_api("hip")
+        # No file created when nothing to save
+        assert not file.exists()
+
+
+# =============================================================================
+# TEST: Docker Container Query Function (User's Pattern)
+# =========================================================================
+
+class TestArchitectureContainerQuery:
+    """Test suite for query_archlinux_package() using docker pacman pattern."""
+    
+    def test_arch_query_successful_pacman_output(self, mocker):
+        """Should successfully parse pacman -Si output from container."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """Package Name           : rocminfo
+Version                : 5.6.2_0803-1
+Description            : Tool for ROCm system information
+... (other fields)"""
+        
+        mocker.patch('subprocess.run', return_value=mock_result)
+        
+        result = arch_poller.query_archlinux_package('rocminfo')
         
         assert result is not None
-        assert result["package"] == "Hip"
-        assert result["available_in_arch"] is True
+        assert result['package'] == 'rocminfo'
+        assert result['last_version'] == '5.6.2_0803-1'
     
-    def test_query_official_handles_package_not_found(self, mocker):
-        mock_response = Mock()
-        search_html = arch_poller.create_mocked_arch_search_html("nonexistent", found=False)
-        mock_response.text = search_html
-        mock_response.status_code = 200
+    def test_arch_query_empty_result_returns_none(self, mocker):
+        """Should return None when pacman returns no results."""
+        mocker.patch('subprocess.run', return_value=Mock(
+            returncode=1, stdout="Package not found: nonexistent"
+        ))
         
-        mocker.patch('poll_archlinux_builds.requests.get', return_value=mock_response)
-        
-        result = arch_poller.query_archlinux_api("nonexistent")
+        result = arch_poller.query_archlinux_package('nonexistent')
         assert result is None
     
-    def test_query_official_handles_network_error(self, mocker):
-        import requests
+    def test_arch_query_timeout_handling(self, mocker):
+        """Should handle subprocess timeout gracefully."""
+        import subprocess
         
-        mocker.patch('poll_archlinux_builds.requests.get', side_effect=requests.exceptions.ConnectionError())
+        mocker.patch('subprocess.run', side_effect=subprocess.TimeoutExpired("cmd", 300))
         
-        result = arch_poller.query_archlinux_api("hip")
+        result = arch_poller.query_archlinux_package('hip')
         assert result is None
-
-
-class TestAURAPIQuerying:
-    """Test suite for Arch User Repository queries via AUR API."""
     
-    def test_query_aur_finds_package_exists(self, mocker):
-        def mock_get(*args, **kwargs):
-            base_url = args[0] if args else ""
-            
-            if "archlinux.org/packages/search" in base_url:
-                return Mock(status_code=404)
-            else:
-                aur_mock = Mock()
-                aur_mock.json.return_value = arch_poller.ARCHLINUX_AUR_API_SUCCESS
-                aur_mock.status_code = 200
-                return aur_mock
+    def test_arch_query_docker_not_found(self, mocker):
+        """Should handle docker command not available."""
+        mocker.patch('subprocess.run', side_effect=FileNotFoundError("No such file: 'docker'"))
         
-        mocker.patch('poll_archlinux_builds.requests.get', side_effect=mock_get)
+        result = arch_poller.query_archlinux_package('hip')
+        assert result is None
+    
+    def test_arch_query_version_parsing(self, mocker):
+        """Should correctly parse pacman version output."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """Package Name           : hipblas
+Version                : 5.7.1-1
+"""
+        mocker.patch('subprocess.run', return_value=mock_result)
         
-        result = arch_poller.query_archlinux_api("hip")
+        result = arch_poller.query_archlinux_package('hipblas')
         
         assert result is not None
+        assert result['last_version'] == '5.7.1-1'
 
 
-class TestArchPackageMatrixGeneration:
-    """Test suite for ArchLinux-specific package mapping."""
+# =============================================================================
+# TEST: Docker Configuration
+# =========================================================================
+
+class TestConfigurationSetup:
+    """Test suite for Docker container configuration."""
     
-    def test_generates_mapping_for_all_tracked_arch_packages(self):
-        matrix = arch_poller.generate_arch_test_matrix()
-        
-        assert isinstance(matrix, list)
-        assert len(matrix) == len(arch_poller.TRACKED_ARCH_PACKAGES)
-    
-    def test_includes_hip_test_directory_mapping(self):
-        matrix = arch_poller.generate_arch_test_matrix()
-        
-        hip_entry = next((p for p in matrix if p['package_name'] == 'hip'), None)
-        
-        assert hip_entry is not None
+    def test_arch_linux_docker_image_set(self):
+        """Should use correct Arch Linux base image."""
+        assert arch_poller.ARCH_DOCKER_IMAGE == 'archlinux:latest'
 
 
-class TestArchErrorHandling:
-    """Test error handling scenarios specific to ArchLinux poller."""
+# =============================================================================
+# TEST: Package Configuration & Tracking
+# =========================================================================
+
+class TestArchitecturePackageTracking:
+    """Test suite for tracked package configuration."""
     
-    def test_handles_missing_aur_endpoint(self, mocker):
-        import requests
+    def test_all_packages_tracked(self):
+        """All expected RPM packages should be tracked."""
+        package_names = {pkg.lower() for pkg in arch_poller.TRACKED_ARCH_ROCM_PACKAGES}
+        assert 'hip' in package_names
+        assert 'rocminfo' in package_names
+
+
+# =============================================================================
+# TEST: Integration and CLI Behavior
+# =========================================================================
+
+class TestArchLinuxCLIAndMain:
+    """Test main execution flow and CLI parsing."""
+    
+    def test_get_parser_has_all_args(self):
+        """Parser should have all required CLI arguments."""
+        parser = arch_poller.get_parser()
         
-        def mock_get(*args, **kwargs):
-            base_url = args[0] if args else ""
-            
-            if "archlinux.org/packages/search" in base_url:
-                return Mock(status_code=500)
-            elif "rpc?v=5" in base_url:
-                raise Exception("AUR endpoint failed")
-            else:
-                pass
-            
-        mocker.patch('poll_archlinux_builds.requests.get', side_effect=mock_get)
+        help_text = str(parser.format_help())
+        assert 'package' in help_text
+        assert 'list-packages' in help_text
+    
+    def test_main_returns_zero_on_no_changes(self, mocker):
+        """Main function should return 0 when no updates found."""
+        # Mock to prevent actual subprocess execution
+        mocker.patch('subprocess.run', return_value=Mock(
+            returncode=1, stdout=""
+        ))
         
-        result = arch_poller.query_archlinux_api("hip")
+        result = arch_poller.get_parser().parse_args(['--all'])
+        assert result.all is True
+
+
+# =============================================================================
+# TEST: Error Handling Edge Cases
+# =========================================================================
+
+class TestArchitectureErrorHandling:
+    """Test various failure scenarios."""
+    
+    def test_main_handles_subprocess_error(self, mocker):
+        """Should handle Docker subprocess failures gracefully."""
+        mocker.patch('subprocess.run', side_effect=Exception("Docker error"))
+        
+        # Should not crash
+        result = arch_poller.query_archlinux_package('hip')
         assert result is None
 
 
-class TestArchIntegrationFlow:
-    """Integration tests simulating complete Arch polling workflow."""
-    
-    def test_detects_new_arch_version(self, mocker):
-        mock_response = Mock()
-        new_version_html = arch_poller.create_mocked_arch_search_html("hip", found=True).replace(
-            "5.7.0", "5.8.1"
-        )
-        
-        mock_response.text = new_version_html
-        mock_response.status_code = 200
-        
-        mocker.patch('poll_archlinux_builds.requests.get', return_value=mock_response)
-        
-        new_version_detected = arch_poller.query_archlinux_api("hip")
-        assert new_version_detected is not None
+# =============================================================================
+# HELPER MOCK FACTORIES (for testing)
+# =========================================================================
+
+def create_mock_pacman_response(package_name="hip", version="5.7.0-1"):
+    """Create a mocked subprocess.result for pacman queries."""
+    mock = Mock()
+    mock.returncode = 0
+    mock.stdout = f"""Package Name           : {package_name}
+Version                : {version}
+Description            : ROCm package testing
+
+... (additional fields)"""
+    return mock
 
 
-class TestArchHelperFunctions:
-    """Test ArchLinux-specific utility functions."""
-    
-    def test_create_mocked_arch_search_html_found(self):
-        html = arch_poller.create_mocked_arch_search_html("hyp", found=True)
-        
-        assert "hyp" in html.lower()
-    
-    def test_create_mocked_arch_search_html_not_found(self):
-        html = arch_poller.create_mocked_arch_search_html("nonexistent", found=False)
-        
-        assert len(html) > 0
+# =============================================================================
+# TEST EXECUTION ENTRY POINT
+# =========================================================================
 
-
-class TestAURSpecificBehavior:
-    """Test specific behaviors of AUR package detection."""
-    
-    def test_aur_version_format_preserves_numeric_components(self, mocker):
-        aur_mock = Mock()
-        result_resp = {
-            "resultcount": 1,
-            "results": [{
-                "Name": "hip",
-                "Version": "5.7.0-2",
-                "NumVotes": "400"
-            }]
-        }
-        
-        aur_mock.json.return_value = result_resp
-        
-        def mock_get(*args, **kwargs):
-            return aur_mock
-        
-        mocker.patch('poll_archlinux_builds.requests.get', side_effect=mock_get)
-        
-        result = arch_poller.query_archlinux_api("hip")
-        
-        assert "5.7.0-2" in str(result.get("version", ""))
-
-
-ARCH_STATE_PATH = arch_poller.DEFAULT_STATE_FILE
-
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])

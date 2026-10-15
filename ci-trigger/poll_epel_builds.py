@@ -1,347 +1,255 @@
 #!/usr/bin/env python3
 """
-EPEL (Extra Packages for Enterprise Linux) Build Poller for RHEL ROCm Packages
+EPEL/RHEL ROCm Package Poller via Docker Container
 
-Monitors EPEL repository and Fedora RPM repositories for new package builds of tracked ROCm packages.
-Records last-checked version to enable efficient incremental polling.
-
-For CentOS Stream/RHEL 10, ROCm packages are sourced from:
-- Fedora Koji (shared ecosystem with CentOS)
-- EPEL repository (RHEL-specific package variants)
+Pattern aligned with /home/trix/rocm/rocm-distro-containers/rhel/10/dnf/
+- Uses direct EPEL RPM installation 
+- Uses dnf repoquery -i for detailed package metadata
 
 Usage:
-    poll-epel-builds.py [options]
+    poll_epel_builds.py [options]
 
 Options:
-    --package PKGNAME       Specific package to check (default: hipblas)
-    --list-packages         Show all tracked ROCm packages  
-    -f, --file STATEFILE    State file location (default: ci-trigger/results/epel_build_state.json)
-    --all                   Check all tracked packages
-    --epel-version VERSION  EPEL version to track (10=latest, or specific branch)
+    -p, --package PKGNAME       Specific package to check (default: hipblas)
+    -r, --release RELEASE       Release version (10 or 9)
+    -l, --list-packages         Show all tracked EPEL ROCm packages
+    -f, --file STATEFILE        State file location 
+    -a, --all                   Check all tracked packages (default)
 
-EPEL API Endpoints Used:
-    https://kojipkg.fedoraproject.org/repos/epel-10/latest/x86_64/packages/  # EPEL 10 package listing
-    https://src.fedoraproject.org/rpms/hipblas  # RPM source repository
-    https://docs.fedoraproject.org/en-US/fedora/doxygen/api/index.html      # Koji API endpoints
+Query Method:
+    docker run quay.io/centos/centos:stream{release} \
+        dnf repoquery -i {package_name}
+    
+Author: ROCm-Distro-Tester Team
+Version: 0.5.0 (Aligned with user example pattern)
 """
 
-import requests
 import json
+import subprocess
 import argparse
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 
-
-# =============================================================================
-# CONFIGURATION: EPEL/RHEL Package Tracking  
-# Same packages as Fedora but with RHEL-specific naming and versions
-# =============================================================================
-
-# Tracked RHEL/CentOS Stream ROCm packages - matches Fedora package list
+# Configuration - matches /home/trix/rocm structure exactly
 TRACKED_RHEL_ROCM_PACKAGES = [
-    'hipblas',          # HIP Basic Linear Algebra Subroutine
-    'rocblas',          # ROC BASIC LINEAR ALGEBRA SUBROUTINE (RHEL variant)
-    'hipsolver',        # HIP BLAS solver
-    'rocsolver',        # ROC SOLVER library
-    'hipfft',           # HIP Fourier Transform Library  
-    'rocfft',           # ROC Fourier Transform Library
-    'hipsparse',        # HIP Sparse BLAS
-    'rocsparse',        # ROC Sparse library
-    'rccl',             # ROCm Communication Collectives
+    'hipblas', 'rocblas', 'hipsolver', 'rocsolver',
+    'hipfft', 'rocfft', 'hipsparse', 'rocsparse', 'rccl'
 ]
 
-# EPEL version tracking for CentOS Stream equivalents
-EPEL_VERSION_TEMPLATES = {
-    '10':           f"epel-10",              # CentOS Stream 10 (newest) 
-    '9':            f"epel-9",               # Older EPEL variant
-    'latest':       f"epel-10",              # Current rolling equivalent
+RELEASE_IMAGES = {
+    '10': 'quay.io/centos/centos:stream10',
+    '9':  'quay.io/centos/centos:stream9',
 }
 
-DEFAULT_EPEL_VERSION = EPEL_VERSION_TEMPLATES['latest']
-
-# Koji API URL for EPEL package builds (Fedora/Koji shared infrastructure)  
-KOJI_EPEL_BASE_URL = "https://kojipkg.fedoraproject.org/repos/epel"
-EPEL_API_ENDPOINTS = {
-    'epel-10': "https://kojipkg.fedoraproject.org/repos/epel-10/latest/builds",  # CentOS Stream 10 equivalent
+EPEL_RELEASE_URLS = {
+    '10': 'https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm',
+    '9':  'https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm',
 }
 
-# State tracking file (stores last build_id per package for incremental checking)
-DEFAULT_STATE_FILE = Path(__file__).parent / 'results' / 'epel_build_state.json'
+DEFAULT_STATE_FILE = Path(__file__).parent / 'results'
+
+# State management functions (same as before)
+def get_state_file(release: str) -> Path:
+    return DEFAULT_STATE_FILE / f"epel_{release}_build_state.json"
 
 
-# =============================================================================
-# HELPER FUNCTIONS: Load and Save EPEL Build State (matches Fedora patterns)
-# Same structure as Fedora poller but with EPEL-specific version tracking  
-# =============================================================================
-
-def load_epel_package_state(state_file: Path) -> Dict[str, str]:
-    """Load previous EPEL package build state from file or return empty dict."""
-    if state_file.exists():
-        try:
-            with open(state_file, 'r') as f:
-                saved_state = json.load(f)
-                # Extract just the latest build_id per package for incremental checking
-                return {
-                    pkg['package']: pkg.get('last_build_id', '') 
-                    for pkg in saved_state
-                }
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"Warning: Could not parse EPEL state file, starting fresh: {e}")
-    return {}
+def load_build_state(state_file: Path):
+    if not state_file.exists():
+        return {}
+    try:
+        with open(state_file, 'r') as f:
+            saved = json.load(f)
+            if isinstance(saved, list):
+                return {pkg.get('name', pkg.get('package', '')): pkg.get('build_id', '') for pkg in saved if pkg}
+            elif isinstance(saved, dict):
+                return saved
+        return {}
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        print(f"Warning: Could not parse EPEL state file {state_file}: {e}")
+        return {}
 
 
-def save_epel_package_state(state_file: Path, new_builds: List[Dict]):
-    """Save updated build state to disk for next polling cycle."""
+def save_build_state(state_file: Path, new_builds: List[Dict]):
     if not new_builds:
-        # No changes detected, preserve existing state for efficient cycling
-        saved_state = load_epel_package_state(state_file)
-        with open(state_file, 'w') as f:
-            json.dump(list(saved_state.values()), f, indent=2)
+        print("No updates to save.")
         return
-    
-    updated_state = {}
-    
-    if state_file.exists():
-        try:
-            saved_state = load_epel_package_state(state_file)
-        except:
-            saved_state = {}
         
-        # Merge with new changes while preserving old state
-        updated_state = dict(saved_state)
+    raw_existing = load_build_state(state_file)
     
-    # Update with new build data for each package detected
+    existing = {}
+    for pkg, value in raw_existing.items():
+        if isinstance(value, str):
+            existing[pkg] = {'package': pkg, 'build_id': value, 'timestamp': None}
+        elif isinstance(value, dict):
+            existing[pkg] = value
+    
     for build in new_builds:
-        pkg_name_lower = f"{build['package'].lower()}-epel"
-        updated_state[pkg_name_lower] = {
+        pkg_name = build['package'].lower()
+        existing[pkg_name] = {
             'package': build['package'],
-            'last_build_id': str(build.get('build_id', '')),
-            'epel_version': build.get('epel_version', DEFAULT_EPEL_VERSION),
-            'timestamp': build.get('timestamp', ''),
-            'repository': build.get('repository', 'epel')
+            'build_id': str(build.get('build_id', '')),
+            'timestamp': build.get('timestamp', datetime.now().isoformat()),
         }
     
+    state_file.parent.mkdir(parents=True, exist_ok=True)
     with open(state_file, 'w') as f:
-        json.dump(list(updated_state.values()), f, indent=2)
+        json.dump(list(existing.values()), f, indent=2)
+    
+    print(f"Saved build state to {state_file}")
 
-
-# =============================================================================
-# Query EPEL/Fedora Koji API for Package Information (RHEL/RPM specific)
-# Uses same APIs as Fedora but focuses on CentOS Stream compatible builds
-# =============================================================================
-
-def query_epel_koji_api(package_name: str, epelet_version: str = DEFAULT_EPEL_VERSION) -> Optional[Dict]:
-    """Query Koji API for EPEL package information matching CentOS Stream requirements."""
+# Query function matching user's test.sh pattern exactly
+def query_epel_package(package_name: str, release: str = "10"):
+    """
+    Query RHEL EPEL package using dnf repoquery -i.
+    Pattern: Matches /home/trix/rocm/rocm-distro-containers/rhel/10/dnf/test.sh
     
-    # EPEL packages share infrastructure with Fedora (RPM ecosystem integration)
-    # This enables unified tracking across both distributions
+    Usage inside container: dnf repoquery -i {package_name}
+    First installs epel-release rpm, then queries for package details
+    """
     
-    api_endpoint = None
+    docker_image = RELEASE_IMAGES.get(release, f"quay.io/centos/centos:stream{release}")
+    epel_rpm_url = EPEL_RELEASE_URLS.get(str(release))
     
-    # Determine proper build target URL based on EPEL version requested
-    if epelet_version == '10':
-        # CentOS Stream 10 equivalent - uses epel-10 repository
-        api_url = f"{KOJI_EPEL_BASE_URL}/epel-10/latest/x86_64/packages/{package_name}"
-    
-    elif epelet_version.startswith('epel-'):
-        # Generic EPEL version tracking  
-        base_epel_ver = epelet_version.replace('epel-', '')
-        api_url = f"{KOJI_EPEL_BASE_URL}/epel-{base_epel_ver}/latest/x86_64/packages/{package_name}"
-    
-    else:
-        # Default to latest available builds for the package
-        api_endpoint = "https://kojipkg.fedoraproject.org/package" + "/" + f"{package_name}"
-        return {
-            'package': package_name.capitalize(),
-            'last_build_id': str(datetime.now().timestamp()),
-            'epel_version': DEFAULT_EPEL_VERSION,
-            'repository': 'fedora-epel-shared',
-            'available_version': 'unknown'  # Will be filled by Koji API response parsing
-        }
+    if not epel_rpm_url:
+        print(f"  No EPEL URL defined for release {release}")
+        return None
     
     try:
-        import requests
-        response = requests.get(api_url, timeout=15)
+        # Match your exact pattern - install EPEL, then query with repoquery
+        cmd = f'dnf update -y >/dev/null 2>&1 && dnf install -y {epel_rpm_url} || true && dnf repoquery -i "{package_name}"'
         
-        # Check for package availability in requested EPEL version
-        if response.status_code == 200:
-            data = response.json()
+        result = subprocess.run(
+            ['docker', 'run', '--rm', docker_image, 'sh', '-c', cmd],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        
+        if result.returncode == 0 and package_name in result.stdout:
+            output = result.stdout
             
-            if 'packages' in data and len(data['packages']) > 0:
-                pkg_info = data['packages'][0]
-                
+            # Parse dnf repoquery -i format (same as user's approach)
+            version = release_ver = None
+            for line in output.splitlines():
+                if ':' in line.strip():
+                    key, val = line.split(':', 1)
+                    key = key.strip().lower()
+                    val = val.strip()
+                    
+                    if key == 'version':
+                        version = val
+                    elif key == 'release':
+                        release_ver = val
+            
+            if version and release_ver:
                 return {
-                    'package': package_name.capitalize(),
-                    'last_build_id': str(pkg_info.get('build_id', '')),
-                    'epel_version': epelet_version, 
-                    'repository': f"epel-{epelet_version}" if '-epel' in api_url else "fedora-external",
-                    'available_version': pkg_info.get('version', 'unknown'),
-                    'timestamp': str(datetime.now()),
-                    'architecture': 'x86_64'  # Standard RHEL architecture tracking
+                    'package': package_name,
+                    'build_id': f"{version}",
+                    'available_version': version,
+                    'rpm_release': release_ver,
+                    'timestamp': datetime.now().isoformat(),
+                    'distro': f"RHEL/CentOS Stream {release_ver or release}",
                 }
         
-        # No build found for requested package/version combination
-        if response.status_code == 404:
-            return None
-            
-    except requests.exceptions.RequestException as e:
-        print(f"Error querying EPEL Koji API for {package_name}: {e}")
-    
-    return None
+        print(f"Package '{package_name}' not found via dnf repoquery")
+        return None
+        
+    except subprocess.TimeoutExpired:
+        print(f"  Timeout querying {package_name}")
+        return None
+    except FileNotFoundError:
+        print("  Error: Docker not available")
+        return None
+    except Exception as e:
+        print(f"  Error query: {e}")
+        return None
 
 
-# =============================================================================
-# Package Matrix Generation for RHEL/CentOS (similar to Fedora mapping)
-# Maps tracked packages to their CentOS Stream-compatible test directories  
-# =============================================================================
+# Main execution
+def get_parser():
+    parser = argparse.ArgumentParser(
+        prog='poll_epel_builds.py',
+        description='Poll EPEL/RHEL for ROCm packages using DNF repoquery (user pattern)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Workflow matching your Docker setup:
+  # Container build (your method)
+  cd /home/trix/rocm/rocm-distro-containers/rhel/10/dnf && ./run.sh
+  
+  # Programmatic queries
+  python3 poll_epel_builds.py -p hipblas              # Poll RHEL 10
+  python3 poll_epel_builds.py --release 9             # Poll RHEL 9""")
 
-def generate_epel_package_mapping() -> List[Dict]:
-    """Generate mapping between tracked packages and test directories for EPEL/RHEL."""
-    
-    # Define EPEL-to-test directory mappings (similar to Fedora's generation logic)
-    epel_package_config = {
-        'hipblas': ('hipblas', 'hipblas-rhel-test'),
-        'rocblas': ('rocblas', 'rocblas-rhel-test'),  
-        'hipsolver': ('hipsolver', 'hipsolver-rhel-test'),
-        'rocsolver': ('rocsolver', 'rocsolver-rhel-test'),
-        'hipfft': ('hipfft', 'hipfft-rhel-test'),
-        'rocfft': ('rocfft', 'rocfft-rhel-test'),
-    }
-    
-    mapping_list = []
-    
-    for pkg in TRACKED_RHEL_ROCM_PACKAGES:
-        mapping_list.append({
-            'package_name': pkg.lower(),
-            'package_display': pkg.capitalize(),
-            'test_dir': epel_package_config.get(pkg, (pkg, f'{pkg}-rhel-test'))[-1],
-            # EPEL-specific metadata for RHEL environment tracking  
-            'arch_type': 'x86_64',  # Standard RHEL architecture
-            'rpm_format': True      # Indicates RPM-based package packaging
-        })
-    
-    return mapping_list
+    parser.add_argument('-p', '--package', type=str, default='hipblas')
+    parser.add_argument('-r', '--release', choices=['10', '9'], 
+                        type=str, default='10')
+    parser.add_argument('-l', '--list-packages', action='store_true')
+    parser.add_argument('-f', '--file', type=str, default=None)
+    parser.add_argument('-a', '--all', action='store_true')
 
+    return parser
 
-# =============================================================================
-# Main Execution: Poller Orchestrator (matches Fedora pattern logic)  
-# Handles EPEL-specific version checks and builds detection for CentOS Stream systems
-# =============================================================================
 
 def main():
-    """Main entry point for EPEL ROCm package build tracking."""
+    args = get_parser().parse_args()
     
-    parser = argparse.ArgumentParser(
-        description='Poll EPEL repositories for RHEL/CentOS Stream ROCm package updates'
-    )
+    state_file = Path(args.file) if args.file else get_state_file(args.release)
     
-    parser.add_argument('-p', '--package', 
-        action='store',
-        help='Specific package to check (default: all tracked packages)'
-    )
-    parser.add_argument(
-        '--list-packages', '-l', 
-        action='store_true',
-        default=False,
-        help='Show all tracked EPEL/RHEL ROCm packages'
-    )
-    parser.add_argument(
-        '--file', '-f', 
-        type=Path, 
-        help='State file path'
-    )
-    parser.add_argument(
-        '--version', '-v',
-        type=str,
-        default='10',  # CentOS Stream 10 = latest EPEL equivalent
-        choices=['10', '9', 'latest'],
-        help=f'EPEL version to check (default: 10=CentOS Stream 10)'
-    )
-    
-    args = parser.parse_args()
-    
-    # Determine actual EPEL version string for use in API queries
-    epelet_ver = f"epel-{args.version}" if args.version != 'latest' else None
-    epelet_name = args.version
-    
-    print(f"=== EPEL/RHEL ROCm Package Build Poller ===")
+    print(f"=== EPEL/RHEL ROCm Package Poller ===")
+    print(f"Release: {args.release}")
+    print(f"Container: {RELEASE_IMAGES[args.release]}")
+    print(f"EPEL RPM: {EPEL_RELEASE_URLS[args.release]}")
     print(f"Timestamp: {datetime.now().isoformat()}")
-    print(f"EPEL version target: {epelet_ver or epelet_name}")
-    print(f"State file: {args.file}")
+    print(f"State file: {state_file}")
     
-    # Determine which packages to check from tracked list
-    check_list = []
+    saved_raw = load_build_state(state_file)
+    saved = {}
+    for pkg, data in saved_raw.items():
+        if isinstance(data, dict):
+            saved[pkg] = data.get('build_id', '')
+        else:
+            saved[pkg] = str(data)
     
-    if args.package:
-        check_list = [args.package]
-    elif args.list_packages:
-        check_list = TRACKED_RHEL_ROCM_PACKAGES
-    else:
-        check_list = TRACKED_RHEL_ROCM_PACKAGES
+    queries = [args.package] if args.package else TRACKED_RHEL_ROCM_PACKAGES
     
-    # Show package list if requested for confirmation
-    if any([True for c in ['--list-packages', '--all'] if c in args]):
-        print(f"\n✓ Tracked EPEL/CentOS Stream ROCm packages:")
-        for pkg in check_list:
-            print(f"   - {pkg}")
-            print(f"     -> Test directory: {generate_epel_package_mapping()[-1]['test_dir']}")
+    new_builds_detected = []
+    no_changes = True
     
-    # Poll for package updates matching CentOS Stream requirements
-    new_updates_detected = []
-    no_changes_detected = True
-    
-    for pkg in check_list:
-        print(f"\nChecking EPEL package: {pkg} version:{epelet_ver or epelet_name}")
+    for pkg_name in queries:
+        print(f"\nChecking package: {pkg_name}")
         
-        latest_build = query_epel_koji_api(pkg, epelet_ver)
+        latest = query_epel_package(pkg_name, args.release)
         
-        if not latest_build:
+        if not latest:
+            print(f"  Not found")
             continue
         
-        # Compare against previously saved build ID to detect changes
-        prev_state = load_epel_package_state(args.file) or {}
-        last_build_id = prev_state.get(f"{pkg.lower()}-epel", {}).get('last_build_id', '')
-        current_build_id = latest_build.get('last_build_id', '0')
+        last_build_id = saved.get(pkg_name.lower(), '')
+        current_build_id = latest.get('build_id', '')
         
-        print(f"  Previously checked (EPEL build): {str(last_build_id)[:10]}...")
-        print(f"  Current build ID: {current_build_id}")
-        print(f"  Version available: {latest_build.get('available_version', 'unknown')}")
-        print(f"  Repository source: {latest_build.get('repository', 'unknown')}")
+        print(f"  Last checked: {last_build_id}")
+        print(f"  Current version: {current_build_id}")
         
-        # If build IDs differ, this is a new update detected in EPEL repo
-        if str(last_build_id) != current_build_id and current_build_id != '' and int(current_build_id) > 0:
-            new_updates_detected.append(latest_build)
-            no_changes_detected = False
-            
-            # Map to appropriate test directory for RHEL-specific testing
-            for config in generate_epel_package_mapping():
-                if config['package_name'].lower() == pkg.lower():
-                    latest_build['rhel_test_dir'] = config.get('test_dir', f'{pkg}-rhel-test')
-                    print(f"  📁 CentOS Stream test directory: {config.get('test_dir')}")
-                    break
+        if last_build_id != current_build_id:
+            new_builds_detected.append(latest)
+            no_changes = False
     
-    # Save state with any new EPEL updates detected
-    save_epel_package_state(args.file, new_updates_detected)
+    save_build_state(state_file, new_builds_detected)
     
-    # Report final status to user or CI pipeline
-    if no_changes_detected:
-        print("\n✅ No EPEL package version updates detected for tracked packages.")
+    if no_changes:
+        print("\n✅ No new build changes detected.")
         return 0
-    
-    count = len(new_updates_detected)
-    print(f"\n🎉 {count} EPEL/RHEL package update(s) detected!")
-    
-    for build in new_updates_detected:
-        repo_name = build.get('repository', 'unknown')[:30]
-        pkg_name = build['package']
-        arch = build.get('architecture', 'x86_64')
-        ver = build.get('available_version', 'N/A')
-        
-        print(f"   - {pkg_name}: Build #{build['last_build_id']} ({repo_name}) on epel-{ver} → Test: {build['rhel_test_dir']}")
-    
-    return 1  # Signal that new builds detected and need CI processing
+    else:
+        print(f"\n🎉 {len(new_builds_detected)} new version(s) detected!")
+        for build in new_builds_detected:
+            pkg_name = build.get('package', 'unknown')
+            ver = build.get('available_version', 'X')
+            release_ver = build.get('rpm_release', '')
+            print(f"   - {pkg_name}: {ver} (release: {release_ver or args.release})")
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    exit_code = main()
+    sys.exit(exit_code)

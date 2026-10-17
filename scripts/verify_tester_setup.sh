@@ -132,7 +132,7 @@ HOSTS_FILE="/etc/hosts"
 if grep -q " ${REGISTRY_ALIAS}\$" "$HOSTS_FILE" 2>/dev/null; then
     CURRENT_IP=$(grep "\s${REGISTRY_ALIAS}$" "$HOSTS_FILE" | awk '{print $1}')
     
-    if [ "$CURRENT_IP" = "$EXPECTED_IP" ]; then
+    if [ "$CURRENT_IP" = "EXPECTED_IP" ]; then
         log_pass "Registry alias '${REGISTRY_ALIAS}' resolves correctly to ${EXPECTED_IP}"
     else
         echo -e "${RED}Alias '${REGISTRY_ALIAS}' exists but points to '${CURRENT_IP}'. Expected '${EXPECTED_IP}'.${NC}" >&2

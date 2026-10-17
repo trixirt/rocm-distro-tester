@@ -308,7 +308,39 @@ rocm-distro-tester/  # OR any other directory name
 
 ---
 
-*This plan will be refined iteratively as the project progresses. Major changes should be documented in this file or via pull requests.*
+*This plan will be refined iteratively as the project progresses. Major changes should be documented in this file or via pull requests.
+
+---
+
+## Phase 5: Hardware Readiness Verification & Pilot Setup (Fedora 44 / GFX1201)
+
+**Status**: v0.3 (Initial Draft) 
+**Date**: Oct 22, 2024
+
+### Objective
+Establish a standardized **Hardware Readiness Testsuite** to validate the operational status of new nodes (specifically targeting Fedora 44 bleeding-edge environments with GFX1201 hardware before they are added to the K3s/Kubernetes cluster.)
+
+### Workflow Integration
+1. **Pilot Provisioning**: Use the existing `Fedora 44 + GFX1201` machine as a pilot for testing new driver dependencies (likely Kernel >= 6.x).
+2. **Automation Scripting**: Convert manual pilot setup steps into automated bash verification scripts.
+3. **Gatekeeping**: The testsuite must pass before a node is considered "Ready" for GPU workload placement.
+
+### Deliverables
+| Deliverable | File Location | Purpose |
+|-------------|---------------|---------|
+| Controller Check | `scripts/verify_controller_setup.sh` | Validates K3s API, kubelet status (`kubectl version + node state`). |
+| Driver/Firmware Check | `scripts/verify_gpu_setup.sh` | Ensures Radeon/RDNA4 drivers (`amdgpu`) and `/dev/dri` nodes are active. |
+| Master Suite Runner  | `scripts/verify_all_tests.sh`       | Orchestration script (runs both checks, returns `0` or `1`).        |
+
+### Fedora 44 Specific Requirements
+-
+- **Kernel**: Must run Kernel >= `6.10` for native RDNA3/RDNA4 (GFX1201) support.
+**Drivers**: Ensure `mesa-vas`, `vulkan-radeon` and firmware packages are installed. |
+|- ROCm/VR: Verify `/opt/rocm` symlinks or `rocm-smi` availability for test pipelines. |
+
+---
+
+*Plan continues...**
 
 ## Extension: Multi-Distro Polling Support
 
@@ -2020,7 +2052,21 @@ Version tags will be added when specific versioning strategy is required.
 | **Build Time (hipblas-fedora)** | ~5-10 min | Includes layer cache for subsequent builds |
 | **Push Time** | < 30 sec | One-time push to registry from builder |
 | **Pull Time to Test Node** | < 1 sec | Local network + same base image layers cached |
-| **Storage on Builder** | ~2GB per image variant | Shared layer storage across all images |
+| **Storage on Builder** | **≥500GB dedicated capacity** | Root partition used only for OS; `/rocm-builder` handles all image layers and registries |
+| **Data Root Directory** | `/rocm-builder` (Mounted) | Configured via `daemon.json` to isolate build space from system root |
+
+---
+
+### 🧱 6.1 Hardware Readiness Verification (Builder Node)
+Before attempting matrix builds, every builder node must pass the `verify_builder_setup.sh` checks:
+
+| Requirement | Description |
+|-------------|-------------|
+| **Registry Alias Identity** | Must resolve to `EXPECTED_IP` (e.g., 192.168.1.25) in `/etc/hosts` |
+| **Docker Root Dir Alignment** | Must be configured as `/rocm-builder` and active in daemon config |
+| **Storage Capacity** | Minimum **500GB total volume** on the `/rocm-builder` mount point |
+| **Directory Permissions** | Strict ownership: `root:root` mode `0700` |
+| **Docker Runtime** | Must be running and accessible by a non-root user in the `docker` group |
 
 ---
 
@@ -2355,3 +2401,65 @@ This completes the core infrastructure phase of the rocm-distro-tester project. 
 [7] Web Dashboard for Test Results Aggregation (NEW v0.1.6!)
 ```
 
+
+
+## Phase 5: Hardware Readiness Verification \u0026 Pilot Setup (Fedora 44 / GFX1201)
+
+**Status**: v0.3 (Initial Draft) 
+**Date**: Oct 22, 2024
+
+### Objective
+Establish a standardized **Hardware Readiness Testsuite** to validate the operational status of new nodes (specifically targeting Fedora 44 bleeding-edge environments with GFX1201 hardware before they are added to the K3s/Kubernetes cluster.)
+
+### Workflow Integration
+1. **Pilot Provisioning**: Use the existing  machine as a pilot for testing new driver dependencies (likely Kernel >= 6.x).
+2. **Automation Scripting**: Convert manual pilot setup steps into automated bash verification scripts.
+3. **Gatekeeping**: The testsuite must pass before a node is considered 'Ready' for GPU workload placement.
+
+### Deliverables
+| Deliverable | File Location | Purpose |
+|-------------|---------------|---------|
+| Controller Check | `scripts/verify_controller_setup.sh` | Validates K3s API, kubelet status (`kubectl version + node state`). |
+| Driver/Firmware Check | `scripts/verify_gpu_setup.sh` | Ensures Radeon/RDNA4 drivers (`amdgpu`) and `/dev/dri` nodes are active. |
+| Master Suite Runner  | `scripts/verify_all_tests.sh`       | Orchestration script (runs both checks, returns `0` or `1`).        |
+
+### Fedora 44 Specific Requirements
+- **Kernel**: Must run Kernel >= `6.10` for native RDNA3/RDNA4 (GFX1201) support.
+**Drivers**: Ensure `mesa-vas`, `vulkan-radeon` and firmware packages are installed. |
+|- ROCm/VR: Verify `/opt/rocm` symlinks or `rocm-smi` availability for test pipelines. |
+
+---
+
+*Plan continues...*
+
+
+---
+
+## Phase 5: Hardware Readiness Verification & Pilot Setup (Fedora 44 / GFX1201)
+
+**Status**: v0.3 (Initial Draft) 
+**Date**: Oct 22, 2024
+
+### Objective
+Establish a standardized **Hardware Readiness Testsuite** to validate the operational status of new nodes (specifically targeting Fedora 44 bleeding-edge environments with GFX1201 hardware before they are added to the K3s/Kubernetes cluster.)
+
+### Workflow Integration
+1. **Pilot Provisioning**: Use the existing `Fedora 44 + GFX1201` machine as a pilot for testing new driver dependencies (likely Kernel >= 6.x).
+2. **Automation Scripting**: Convert manual pilot setup steps into automated bash verification scripts.
+3. **Gatekeeping**: The testsuite must pass before a node is considered 'Ready' for GPU workload placement.
+
+### Deliverables
+| Deliverable | File Location | Purpose |
+|-------------|---------------|---------|
+| Controller Check | `scripts/verify_controller_setup.sh` | Validates K3s API, kubelet status (`kubectl version + node state`). |
+| Driver/Firmware Check | `scripts/verify_gpu_setup.sh` | Ensures Radeon/RDNA4 drivers (`amdgpu`) and `/dev/dri` nodes are active. |
+| Master Suite Runner  | `scripts/verify_all_tests.sh`       | Orchestration script (runs both checks, returns `0` or `1`).        |
+
+### Fedora 44 Specific Requirements
+- **Kernel**: Must run Kernel >= `6.10` for native RDNA3/RDNA4 (GFX1201) support.
+**Drivers**: Ensure `mesa-vas`, `vulkan-radeon` and firmware packages are installed. 
+- ROCm/VR: Verify `/opt/rocm` symlinks or `rocm-smi` availability for test pipelines.
+
+---
+
+*Plan continues...*

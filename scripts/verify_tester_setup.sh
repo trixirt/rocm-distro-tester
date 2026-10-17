@@ -10,9 +10,6 @@
 #   scp verify_tester_setup.sh <tester>:/tmp && ssh <tester> /tmp/verify_tester_setup.sh
 # =============================================================================
 
-# For debugging
-# set -x
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
@@ -46,13 +43,12 @@ echo "==========================================\n"
 # =============================================================================
 # CHECK 1: Docker Runtime Verification
 # =============================================================================
-echo "[Step 1/2] Verifying Container Runtime (Docker)..."
+echo -e "[Step 1/3] Verifying Container Runtime (Docker)..."
 
 if command -v docker &> /dev/null; then
     log_pass "Docker CLI is installed."
     
     # Check if we have permission to interact with the daemon
-    # This handles cases where Docker is installed but $USER isn't in the docker group
     DOCK_PERM_OK=false
     if [ "$(docker info &>/dev/null; echo $?)" = "0" ]; then
         DOCK_PERM_OK=true
@@ -61,11 +57,10 @@ if command -v docker &> /dev/null; then
     if "$DOCK_PERM_OK"; then
         log_pass "Docker daemon is responding."
         
-        log_info "Running standard Docker 'hello-world' container to verify runtime..."
+        log_info "Verifying Docker runtime health..."
         if docker run --rm hello-world &>/dev/null; then
             log_pass "Hello World container executed successfully. Runtime is healthy."
         else
-            # Capture specific error logic here if needed, or fallback general
             log_fail "Docker daemon is up, but 'docker run' failed (check network or permissions)."
         fi
     else
@@ -104,7 +99,7 @@ sudo apt-get update
 sudo apt-get install ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=\$(dpkg --print_architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 ## 2. Install Docker Engine:
 sudo apt-get update && sudo apt-get install docker-ce docker-ce-cli containerd.io
@@ -128,9 +123,32 @@ INSTALL_DOCKER
 fi
 
 # =============================================================================
-# CHECK 2: AMD GPU & ROCm Driver Verification
+# CHECK 2: Network Registry Alias Resolution (rocm-builder)
 # =============================================================================
-echo -e "\n[Step 2/2] Verifying AMD GPU / ROCm Drivers..."
+echo -e "\n[Step 2/3] Verifying Controller Registry Alias..."
+
+REGISTRY_ALIAS="rocm-builder"
+EXPECTED_IP="192.168.1.25"
+HOSTS_FILE="/etc/hosts"
+
+if grep -q " ${REGISTRY_ALIAS}\$" "$HOSTS_FILE" 2>/dev/null; then
+    CURRENT_IP=$(grep "\s${REGISTRY_ALIAS}$" "$HOSTS_FILE" | awk '{print $1}')
+    
+    if [ "$CURRENT_IP" = "$EXPECTED_IP" ]; then
+        log_pass "Registry alias '${REGISTRY_ALIAS}' resolves correctly to ${EXPECTED_IP}"
+    else
+        echo -e "${RED}Alias '${REGISTRY_ALIAS}' exists but points to '${CURRENT_IP}'. Expected '${EXPECTED_IP}'.${NC}" >&2
+        log_fail "Network configuration is incorrect. Update /etc/hosts to resolve 'rocm-builder' to 192.168.1.25."
+    fi
+else
+    echo -e "${RED}Registry alias '${REGISTRY_ALIAS}' not found in ${HOSTS_FILE}.${NC}" >&2
+    log_fail "Please add the following line to /etc/hosts on this machine: 192.168.1.25 rocm-builder"
+fi
+
+# =============================================================================
+# CHECK 3: AMD GPU & ROCm Driver Verification
+# =============================================================================
+echo -e "\n[Step 3/3] Verifying AMD GPU / ROCm Drivers..."
 
 if command -v rocm_agent_enumerator &> /dev/null; then
     log_pass "rocm_agent_enumerator is available."
@@ -141,7 +159,9 @@ if command -v rocm_agent_enumerator &> /dev/null; then
     
     if [ -n "${AGENTS}" ]; then
         echo -e "   ${GREEN}Detected Agent(s):${NC}"
-        echo "$AGENTS" | sed 's/^/     ▶ /'
+        for AGENT in $AGENTS; do
+            echo -e "     ▶ $AGENT"
+        done
         log_pass "AMD GPUs successfully enumerated. Hardware is ready for ROCm workloads."
     else
         log_fail "rocm_agent_enumerator ran but found no GPU agents. Is the amdgpu driver loaded?"
@@ -172,7 +192,9 @@ sudo apt-get update && sudo apt-get install -y rocminfo libdrm-amdgpu1 rocm-smi-
 
 INSTALL_ROCM
     else
-        echo "Download the ROCm installation script for your distro from AMD's developer portal."
+        cat << 'INSTALL_ROCM'
+Download the ROCm installation script for your distro from AMD's developer portal.
+INSTALL_ROCM
     fi
 
     # Fallback check to ensure it's not just a missing package but a driver issue

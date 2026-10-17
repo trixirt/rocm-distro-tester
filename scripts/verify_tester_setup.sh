@@ -2,8 +2,8 @@
 # =============================================================================
 # verify_tester_setup.sh - ROCm Test Node Readiness Checker
 # =============================================================================
-# Purpose: Validates that a target test machine has Docker and AMD GPU (ROCm) 
-# prerequisites met to run automated ROCm distro tests.
+# Purpose: Validates that a target test machine has Docker, Network Alias, 
+# and AMD GPU (ROCm) prerequisites met to run automated ROCm distro tests.
 # Designed to be copied via scp/ssh to remote tester nodes before execution.
 #
 # Usage:
@@ -43,7 +43,7 @@ echo "==========================================\n"
 # =============================================================================
 # CHECK 1: Docker Runtime Verification
 # =============================================================================
-echo -e "[Step 1/3] Verifying Container Runtime (Docker)..."
+echo -e "[Step 1/4] Verifying Container Runtime (Docker)..."
 
 if command -v docker &> /dev/null; then
     log_pass "Docker CLI is installed."
@@ -78,15 +78,12 @@ else
         cat << 'INSTALL_DOCKER'
 
 ## 1. Install Docker Engine:
-sudo dnf install
+sudo dnf install docker-ce docker-ce-cli containerd.io
 
-## 2. Enable docker service
-sudo systemctl start docker
+## 2. Start and enable service:
+sudo systemctl start docker && sudo systemctl enable docker
 
-## 3. Start docker service:
-sudo systemctl start docker
-
-## 4. CRITICAL: Add your current user to the docker group (required for non-root access):
+## 3. CRITICAL: Add your current user to the docker group (required for non-root access):
 sudo usermod -aG docker $USER
 
 (You may need to log out/in or run 'newgrp docker' for changes to take effect)
@@ -125,7 +122,7 @@ fi
 # =============================================================================
 # CHECK 2: Network Registry Alias Resolution (rocm-builder)
 # =============================================================================
-echo -e "\n[Step 2/3] Verifying Controller Registry Alias..."
+echo -e "\n[Step 2/4] Verifying Controller Registry Alias..."
 
 REGISTRY_ALIAS="rocm-builder"
 EXPECTED_IP="192.168.1.25"
@@ -138,17 +135,42 @@ if grep -q " ${REGISTRY_ALIAS}\$" "$HOSTS_FILE" 2>/dev/null; then
         log_pass "Registry alias '${REGISTRY_ALIAS}' resolves correctly to ${EXPECTED_IP}"
     else
         echo -e "${RED}Alias '${REGISTRY_ALIAS}' exists but points to '${CURRENT_IP}'. Expected '${EXPECTED_IP}'.${NC}" >&2
-        log_fail "Network configuration is incorrect. Update /etc/hosts to resolve 'rocm-builder' to 192.168.1.25."
+        log_fail "Network configuration is incorrect. Update /etc/hosts to resolve 'rocm-builder' to $EXPECTED_IP."
     fi
 else
     echo -e "${RED}Registry alias '${REGISTRY_ALIAS}' not found in ${HOSTS_FILE}.${NC}" >&2
-    log_fail "Please add the following line to /etc/hosts on this machine: 192.168.1.25 rocm-builder"
+    log_fail "Please add the following line to /etc/hosts on this machine: $EXPECTED_IP rocm-builder"
 fi
 
 # =============================================================================
-# CHECK 3: AMD GPU & ROCm Driver Verification
+# CHECK 3: Docker Insecure Registries Config (New Requirement)
 # =============================================================================
-echo -e "\n[Step 3/3] Verifying AMD GPU / ROCm Drivers..."
+echo -e "\n[Step 3/4] Verifying Docker Security Configuration..."
+
+DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+EXPECTED_REGISTRY="rocm-builder:5000"
+
+if [ -f "$DOCKER_DAEMON_JSON" ]; then
+    if grep -q "insecure-registries" "$DOCKER_DAEMON_JSON"; then
+        if grep -q "${EXPECTED_REGISTRY}" "$DOCKER_DAEMON_JSON"; then
+            log_pass "Docker daemon.json correctly includes '${EXPECTED_REGISTRY}' in insecure-registries."
+        else
+            echo -e "${RED}WARNING: 'insecure-registries' is present, but '${EXPECTED_REGISTRY}' is missing.${NC}" >&2
+            log_fail "Update ${DOCKER_DAEMON_JSON} to include the registry alias."
+        fi
+    else
+        echo -e "${RED}WARNING: docker.json exists but lacks 'insecure-registries'.${NC}" >&2
+        log_fail "Add 'rocm-builder:5000' to your daemon configuration."
+    fi
+else
+    echo -e "${RED}CRITICAL: ${DOCKER_DAEMON_JSON} does not exist.${NC}" >&2
+    log_fail "Create this file with the insecure-registries entry for the registry:5000."
+fi
+
+# =============================================================================
+# CHECK 4: AMD GPU & ROCm Driver Verification
+# =============================================================================
+echo -e "\n[Step 4/4] Verifying AMD GPU / ROCm Drivers..."
 
 if command -v rocm_agent_enumerator &> /dev/null; then
     log_pass "rocm_agent_enumerator is available."
@@ -158,10 +180,6 @@ if command -v rocm_agent_enumerator &> /dev/null; then
     AGENTS=$(rocm_agent_enumerator 2>/dev/null)
     
     if [ -n "${AGENTS}" ]; then
-        echo -e "   ${GREEN}Detected Agent(s):${NC}"
-        for AGENT in $AGENTS; do
-            echo -e "     ▶ $AGENT"
-        done
         log_pass "AMD GPUs successfully enumerated. Hardware is ready for ROCm workloads."
     else
         log_fail "rocm_agent_enumerator ran but found no GPU agents. Is the amdgpu driver loaded?"
@@ -192,9 +210,7 @@ sudo apt-get update && sudo apt-get install -y rocminfo libdrm-amdgpu1 rocm-smi-
 
 INSTALL_ROCM
     else
-        cat << 'INSTALL_ROCM'
-Download the ROCm installation script for your distro from AMD's developer portal.
-INSTALL_ROCM
+        echo "Download the ROCm installation script for your distro from AMD's developer portal."
     fi
 
     # Fallback check to ensure it's not just a missing package but a driver issue

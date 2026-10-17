@@ -7,7 +7,7 @@
 # Designed to be copied via scp/ssh to remote tester nodes before execution.
 #
 # Usage:
-#   scp verify_tester_setup.sh <tester>:/tmp && ssh <tester> /tmp/verify_tester_setup.sh
+#   scp verify_tester_setup.sh <tester>/tmp && ssh <tester> /tmp/verify_tester_setup.sh
 # =============================================================================
 
 RED='\033[0;31m'
@@ -169,7 +169,7 @@ else
 fi
 
 # =============================================================================
-# CHECK 4: Network Connectivity to Registry (New Requirement)
+# CHECK 4: Network Connectivity Verification (New Requirement)
 # =============================================================================
 echo -e "\n[Step 4/5] Verifying Network Connectivity to Registry..."
 

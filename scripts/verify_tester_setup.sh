@@ -3,7 +3,7 @@
 # verify_tester_setup.sh - ROCm Test Node Readiness Checker
 # =============================================================================
 # Purpose: Validates that a target test machine has Docker, Network Alias, 
-# and AMD GPU (ROCm) prerequisites met to run automated ROCm distro tests.
+# Registry Connectivity, and AMD GPU (ROCm) prerequisites met to run automated ROCm distro tests.
 # Designed to be copied via scp/ssh to remote tester nodes before execution.
 #
 # Usage:
@@ -38,12 +38,13 @@ echo -e "\n=========================================="
 echo "--- ROCm Tester Node Verification ---"
 echo "Target OS: ${OS_NAME}"
 echo "Package Manager: ${PKG_MANAGER}"
+echo "Registry Alias to Test: rocm-builder (port 5000)"
 echo "==========================================\n"
 
 # =============================================================================
 # CHECK 1: Docker Runtime Verification
 # =============================================================================
-echo -e "[Step 1/4] Verifying Container Runtime (Docker)..."
+echo -e "[Step 1/5] Verifying Container Runtime (Docker)..."
 
 if command -v docker &> /dev/null; then
     log_pass "Docker CLI is installed."
@@ -122,7 +123,7 @@ fi
 # =============================================================================
 # CHECK 2: Network Registry Alias Resolution (rocm-builder)
 # =============================================================================
-echo -e "\n[Step 2/4] Verifying Controller Registry Alias..."
+echo -e "\n[Step 2/5] Verifying Controller Registry Alias..."
 
 REGISTRY_ALIAS="rocm-builder"
 EXPECTED_IP="192.168.1.25"
@@ -145,7 +146,7 @@ fi
 # =============================================================================
 # CHECK 3: Docker Insecure Registries Config (New Requirement)
 # =============================================================================
-echo -e "\n[Step 3/4] Verifying Docker Security Configuration..."
+echo -e "\n[Step 3/5] Verifying Docker Security Configuration..."
 
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 EXPECTED_REGISTRY="rocm-builder:5000"
@@ -168,9 +169,45 @@ else
 fi
 
 # =============================================================================
-# CHECK 4: AMD GPU & ROCm Driver Verification
+# CHECK 4: Network Connectivity to Registry (New Requirement)
 # =============================================================================
-echo -e "\n[Step 4/4] Verifying AMD GPU / ROCm Drivers..."
+echo -e "\n[Step 4/5] Verifying Network Connectivity to Registry..."
+
+REGISTRY_URL="http://${REGISTRY_ALIAS}:5000/v2/_catalog"
+
+if command -v curl &>/dev/null; then
+    log_info "Pinging ${REGISTRY_ALIAS}:5000..."
+    # Using a short timeout (4s connect, 8s max) to avoid hanging if the network fails fast
+    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 4 --max-time 8 "$REGISTRY_URL" 2>/dev/null || echo "000")
+    
+    if [ "$RESPONSE" = "200" ]; then
+        log_pass "Successfully reached Docker Registry at ${REGISTRY_ALIAS}:5000 (HTTP Response: $RESPONSE)"
+    elif [ "$RESPONSE" = "000" ]; then
+        log_fail "Cannot reach registry at ${REGISTRY_ALIAS}:5000. Connection timed out or refused." >&2
+    else
+        # Some registries might return 401/404 depending on exact endpoint, but usually v2 is strict.
+        if [ "$RESPONSE" -ge 400 ] && [ "$RESPONSE" -lt 500 ]; then
+             log_fail "Registry returned unexpected HTTP status $RESPONSE (expected 200). Check registry logs." >&2
+        else
+            log_pass "Registry responded with HTTP $RESPONSE. Connectability verified."
+        fi
+    fi
+elif command -v wget &>/dev/null; then
+    echo "[INFO] curl not found, attempting connection via wget..." >&2
+    if wget --spider --timeout=3 "$REGISTRY_URL" >/dev/null 2>&1; then
+        log_pass "Successfully reached Docker Registry at ${REGISTRY_ALIAS}:5000 (via wget)"
+    else
+        log_fail "Cannot reach registry at ${REGISTRY_ALIAS}:5000 via wget." >&2
+    fi
+else
+    echo -e "${RED}WARNING: Neither 'curl' nor 'wget' found. Cannot verify network connectivity to '${REGISTRY_ALIAS}:5000'.${NC}" >&2
+    log_info "Install curl/wget or manually check connectivity from terminal."
+fi
+
+# =============================================================================
+# CHECK 5: AMD GPU & ROCm Driver Verification (renumbered as it is now the 5th check)
+# =============================================================================
+echo -e "\n[Step 5/5] Verifying AMD GPU / ROCm Drivers..."
 
 if command -v rocm_agent_enumerator &> /dev/null; then
     log_pass "rocm_agent_enumerator is available."

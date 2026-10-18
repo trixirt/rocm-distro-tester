@@ -148,17 +148,27 @@ if [ "$FILE_PERMS" != "755" ]; then
 fi
 log_pass "Data root ownership and permissions are correctly set to root:0755 (a+rx)."
 
-# 2. Verify XFS Filesystem Type & Block Size (bsize=32k)
+# 2. Verify XFS Filesystem Type & Block Size (bsize=32k) via robust parsing
 echo -e "[Step 3/4-b] Verifying Filesystem Performance Standards..."
 FILE_SYSTEM_TYPE=$(df --output=fstype "$DOCKER_DATA_ROOT" | tail -1)
 
 if [ "$FILE_SYSTEM_TYPE" = "xfs" ]; then
-    # Extract block size using xfs_info
+    # Extract block size using xfs_info with a robust grep/awk approach
     if command -v xfs_info &> /dev/null; then
-        CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep 'data' | awk '{print $3}' | cut -d= -f2)
+        # Use perl-compatible regex to grab the number after bsize=
+        CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep 'data' | grep -oP 'bsize=\K[0-9]+')
         
         if [ "$CURRENT_BSIZE" = "32768" ]; then
             log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
+        elif [ -z "$CURRENT_BSIZE" ]; then
+            # Fallback to manual parsing if grep -P fails on the system
+            CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep 'data' | awk '{for(i=1;i<=NF;i++) if($i ~ /bsize=/) print $i}' | cut -d= -f2)
+            
+            if [ "$CURRENT_BSIZE" = "32768" ]; then
+                log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
+            else
+                log_fail "XFS detected, but block size is ${CURRENT_BSIZE:-unknown}. Required: 32768. Recreate mount with mkfs.xfs -b size=32768."
+            fi
         else
             log_fail "XFS detected, but block size is ${CURRENT_BSIZE}. Required: 32768. Recreate mount with mkfs.xfs -b size=32768."
         fi

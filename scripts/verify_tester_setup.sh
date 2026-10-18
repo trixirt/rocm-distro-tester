@@ -63,6 +63,7 @@ if command -v docker &> /dev/null; then
         if docker run --rm hello-world &>/dev/null; then
             log_pass "Hello World container executed successfully. Runtime is healthy."
         else
+            # Note: Fails if networking or pull permissions are blocked
             log_fail "Docker daemon is up, but 'docker run' failed (check network or permissions)."
         fi
     else
@@ -122,7 +123,7 @@ INSTALL_DOCKER
 fi
 
 # =============================================================================
-# CHECK 2: Network Registry Alias Resolution (rocm-builder) - FIXED
+# CHECK 2: Network Registry Alias Resolution (rocm-builder)
 # =============================================================================
 echo -e "\n[Step 2/4] Verifying Controller Registry Alias..."
 
@@ -130,21 +131,16 @@ REGISTRY_ALIAS="rocm-builder"
 EXPECTED_IP="192.168.1.25"
 HOSTS_FILE="/etc/hosts"
 
+# Robust check: look for the exact IP followed by the alias to avoid parsing errors on various Linux distros
 if grep "^${EXPECTED_IP}.*${REGISTRY_ALIAS}$" "$HOSTS_FILE" &>/dev/null; then
-    CURRENT_IP="$(grep "${REGISTRY_ALIAS}" "$HOSTS_FILE" | awk '{print $1}')"
-    if [ "$CURRENT_IP" = "$EXPECTED_IP" ]; then
-        log_pass "Registry alias '${REGISTRY_ALIAS}' resolves correctly to ${EXPECTED_IP}"
-    else
-        echo -e "${RED}Alias '${REGISTRY_ALIAS}' exists but points to '${CURRENT_IP}'. Expected '${EXPECTED_IP}'.${NC}" >&2
-        log_fail "Network configuration is incorrect. Update /etc/hosts to resolve 'rocm-builder' to $EXPECTED_IP."
-    fi
+    log_pass "Registry alias '${REGISTRY_ALIAS}' correctly resolves to ${EXPECTED_IP}"
 else
-    echo -e "${RED}Registry alias '${REGISTRY_ALIAS}' not found in ${HOSTS_FILE}.${NC}" >&2
-    log_fail "Please add the following line to /etc/hosts on this machine: $EXPECTED_IP rocm-builder"
+    echo -e "${RED}Registry alias '${REGISTRY_ALIAS}' is missing or pointing to the wrong IP in ${HOSTS_FILE}.${NC}" >&2
+    log_fail "Please run this on your test machine: sudo echo '$EXPECTED_IP $REGISTRY_ALIAS' | sudo tee -a /etc/hosts"
 fi
 
 # =============================================================================
-# CHECK 3: Docker Insecure Regisries Config (Required for Test Pulls!)
+# CHECK 3: Docker Insecure Registries Config (Required for Test Pulls!)
 # =============================================================================
 echo -e "\n[Step 3/4] Verifying Docker Security Configuration..."
 
@@ -152,26 +148,35 @@ DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 TARGET_REGISTRY="192.168.1.25:5000"
 ALIAS_REGISTRY="rocm-builder:5000"
 
-if [ -f "$DOCKER_DAEMON_JSON" ]; then
-    if grep -q "insecure-registries" "$DOCKER_DAEMON_JSON"; then
-        # Verify it trusts either the IP or our alias so pulls succeed later!
-        if grep -q "${TARGET_REGISTRY}" "$DOCKER_DAEMON_JSON" || grep -q "${ALIAS_REGISTRY}" "$DOCKER_DAEMON_JSON"; then
-            log_pass "Docker daemon.json correctly includes registry in insecure-registries."
-        else
-            echo -e "${RED}WARNING: 'insecure-registries' is present, but your builder's registry is missing.${NC}" >&2
-            log_fail "Update ${DOCKER_DAEMON_JSON} to include the IP '${TARGET_REGISTRY}' or alias '${ALIAS_REGISTRY}'."
-        fi
+if [ ! -f "$DOCKER_DAEMON_JSON" ]; then
+    # If the file doesn't exist, the daemon will default back to saving images on your main root partition!
+    log_fail "Configuration file $DOCKER_DAEMON_JSON does not exist. Docker will likely use /var/lib/docker unless you create it." >&2
+    echo -e "\n${RED}Immediate Fix Instructions:${NC}" >&2
+    log_info '  sudo mkdir -p /etc/docker' | tee -a /dev/stderr >/dev/null
+    log_info "  sudo tee $DOCKER_DAEMON_JSON <<EOF" | tee -a /dev/stderr >/dev/null
+    log_info "    {\n      \"insecure-registries\": [\"${ALIAS_REGISTRY}\"]\n    }" | tee -a /dev/stderr >/dev/null
+    echo "EOF" | tee -a /dev/stderr >/dev/null
+    exit 1 # Stop here because without this, builds will fail due to storage exhaustion.
+fi
+
+# Check if insecure-registries is present
+if grep -q "insecure-registries" "$DOCKER_DAEMON_JSON"; then
+    # Verify it trusts either the IP or our alias so pulls succeed later!
+    if grep -q "${TARGET_REGISTRY}" "$DOCKER_DAEMON_JSON" || grep -q "${ALIAS_REGISTRY}" "$DOCKER_DAEMON_JSON"; then
+        log_pass "Docker daemon.json correctly includes registry in insecure-registries."
     else
-        echo -e "${RED}WARNING: docker.json exists but lacks 'insecure-registries'.${NC}" >&2
-        log_fail "Add '192.168.1.25:5000' to your insecure_registries list."
+        echo -e "${RED}WARNING: 'insecure-registries' is present, but your builder's registry is missing.${NC}" >&2
+        log_fail "Update ${DOCKER_DAEMON_JSON} to include the IP '${TARGET_REGISTRY}' or alias '${ALIAS_REGISTRY}'." >&2
+        exit 1
     fi
 else
-    echo -e "${RED}CRITICAL: ${DOCKER_DAEMON_JSON} does not exist.${NC}" >&2
-    log_fail "Create this file and add '192.168.1.25:5000' to your daemon configuration!"
+    echo -e "${RED}WARNING: docker.json exists but lacks 'insecure-registries'.${NC}" >&2
+    log_fail "Add 'rocm-builder:5000' to your insecure_registries list." >&2
+    exit 1
 fi
 
 # =============================================================================
-# CHECK 4: AMD GPU & ROCm Driver Verification (Updated for local paths)
+# CHECK 4: AMD GPU & ROCm Driver Verification
 # =============================================================================
 echo -e "\n[Step 4/4] Verifying AMD GPU / ROCm Drivers..."
 
@@ -185,7 +190,8 @@ if command -v rocm_agent_enumerator &> /dev/null; then
     if [ -n "${AGENTS}" ]; then
         log_pass "AMD GPUs successfully enumerated. Hardware is ready for ROCm workloads."
     else
-        log_fail "rocm_agent_enumerator ran but found no GPU agents. Is the amdgpu_driver loaded?"
+        echo -e "${RED}rocm_agent_enumerator ran but found no GPU agents. Is the amdgpu driver loaded?${NC}" >&2
+        log_fail "Check /dev/kfd permissions or ensure you have a compatible AMD GPU installed." >&2
     fi
 else
     # Recommend how to install rocminfo with rpm / standard packages
@@ -220,7 +226,7 @@ INSTALL_ROCM
     if [ -e /dev/kfd ]; then
         log_pass "Base GPU driver is active (/dev/kfd exists), userland CLI tools just need installation."
     else
-        log_fail "AMD GPU hardware or base kernel driver (amdgpu) does not appear to be loaded. Please check lspci and dmesg for errors."
+        log_fail "AMD GPU hardware or base kernel driver (amdgpu) does not appear to be loaded. Please check lspci and dmesg for errors." >&2
     fi
 fi
 

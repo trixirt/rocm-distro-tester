@@ -40,12 +40,13 @@ echo "--- ROCm CI Builder Node Verification ---"
 echo "Target OS: ${OS_NAME}"
 echo "Package Manager: ${PKG_MANAGER}"
 echo "Expected Registry IP: 192.168.1.25"
+echo "Storage Standard: XFS with bsize=32768"
 echo "==========================================\n"
 
 # =============================================================================
 # CHECK 1: Docker Runtime Verification (Reused from Tester Step 1)
 # =============================================================================
-echo -e "[Step 1/3] Verifying Container Runtime (Docker)..."
+echo -e "[Step 1/4] Verifying Container Runtime (Docker)..."
 
 if command -v docker &> /dev/null; then
     log_pass "Docker CLI is installed."
@@ -99,7 +100,7 @@ fi
 # =============================================================================
 # CHECK 2: Registry Alias Validation (Identity Check)
 # =============================================================================
-echo -e "\n[Step 2/3] Verifying Builder Identity..."
+echo -e "\n[Step 2/4] Verifying Builder Identity..."
 
 EXPECTED_IP="192.168.1.25"
 REGISTRY_ALIAS="rocm-builder"
@@ -123,19 +124,17 @@ else
 fi
 
 # =============================================================================
-# CHECK 3: Storage & Path Capacity for /rocm-builder (Min 500GB Total)
+# CHECK 3: Storage Capacity & Filesystem Verification (/rocm-builder)
 # =============================================================================
-echo -e "[Step 3/3] Verifying Container Data Root (/rocm-builder)..."
+echo -e "\n[Step 3/4] Verifying Container Data Root (/rocm-builder)..."
 
 DOCKER_DATA_ROOT="/rocm-builder"
 
-# 1. Check Directory Existence
 if [ ! -d "$DOCKER_DATA_ROOT" ]; then
-    log_fail "CRITICAL: Target directory '$DOCKER_DATA_ROOT' does not exist! \n         A dedicated mount point is required for the ~1TB of image layers this repository generates."
+    log_fail "CRITICAL: Target directory '$DOCKER_DATA_ROOT' does not exist!"
 fi
 
-# 2. Verify Security Ownership and Permissions
-# Docker data roots MUST be owned by root. Mode should typically be 700 (read/write owner only).
+# 1. Verify Security Ownership and Permissions (root, 0700)
 FILE_PERMS=$(stat -c %a "$DOCKER_DATA_ROOT")
 FILE_OWNER=$(stat -c %U "$DOCKER_DATA_ROOT")
 
@@ -148,20 +147,42 @@ if [ "$FILE_PERMS" != "700" ] && [ "$FILE_PERMS" != "750" ]; then
 fi
 log_pass "Data root ownership and permissions are valid for Docker."
 
-# 3. Verify Docker Daemon Config Matches Configured Root
-# We use docker info to ensure the daemon has actually loaded our /etc/docker/daemon.json
-CURRENT_DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}')
-if [ "$CURRENT_DOCKER_ROOT" != "$DOCKER_DATA_ROOT" ]; then
-    log_fail "Configuration Mismatch: Docker daemon is using '$CURRENT_DOCKER_ROOT', but script expects '$DOCKER_DATA_ROOT'. \n         Verify /etc/docker/daemon.json contains \"data-root\": \"$DOCKER_DATA_ROOT\"."
+# 2. Verify XFS Filesystem Type (Optimized for Large Files/ROCm)
+echo -e "[Step 3/4-b] Verifying Filesystem Performance Standards (XFS bsize=32k)..."
+FILE_SYSTEM_TYPE=$(df --output=fstype /rocm-builder | tail -1)
+
+if [ "$FILE_SYSTEM_TYPE" = "xfs" ]; then
+    # Extract block size using xfs_info
+    if command -v xfs_info &> /dev/null; then
+        CURRENT_BSIZE=$(xfs_info /rocm-builder 2>/dev/null | grep 'data' | awk '{print $3}' | cut -d= -f2)
+        
+        if [ "$CURRENT_BSIZE" = "32768" ]; then
+            log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
+        else
+            log_fail "XFS detected, but block size is ${CURRENT_BSIZE}. Required: 32768. Recreate mount with mkfs.xfs -b size=32768."
+        fi
+    else
+        echo -e "${RED}WARNING: xfs_info not found. Cannot validate bsize. Please install xfsprogs or manually verify format.${NC}" >&2
+        log_pass "XFS detected, assuming correct block size. (Manual verification recommended: 'xfs_info /rocm-builder')"
+    fi
+else
+    echo -e "${RED}Filesystem is ${FILE_SYSTEM_TYPE}. XFS is strongly recommended for ROCm matrix builds with large file I/O.${NC}" >&2
+    log_fail "Please convert or remount this directory as XFS for optimal performance."
 fi
 
-# 4. Check Total and Remaining Space on the specific mount point
+# 3. Verify Docker Daemon Config Matches Configured Root
+CURRENT_DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}')
+if [ "$CURRENT_DOCKER_ROOT" != "$DOCKER_DATA_ROOT" ]; then
+    log_fail "Configuration Mismatch: Docker daemon is using '$CURRENT_DOCKER_ROOT', but script expects '$DOCKER_DATA_ROOT'."
+fi
+
+# 4. Check Total and Remaining Space on the specific mount point (>= 500GB)
 SPACE_CHECK=$(df -BG "$DOCKER_DATA_ROOT" | tail -1)
 TOTAL_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$2); print $2}')
 REMAINING_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$4); print $4}')
 
 if [ "$TOTAL_GB" -lt 500 ]; then
-    log_fail "INSUFFICIENT CAPACITY: /rocm-builder has a total of ${TOTAL_GB}GB. A minimum of 500GB is required for ROCm matrix builds."
+    log_fail "INSUFFICIENT CAPACITY: /rocm-builder has a total of ${TOTAL_GB}GB. A minimum of 500GB is required."
 elif [ "$REMAINING_GB" -lt 100 ]; then
     log_fail "CRITICAL: Only ${REMAINING_GB}GB free on /rocm-builder. Matrix builds will fail due to layer exhaustion."
 else
@@ -169,7 +190,7 @@ else
 fi
 
 # =============================================================================
-# FINAL SUMMARY
+FINAL SUMMARY
 # =============================================================================
 if [ "$FAIL_COUNT" -eq 0 ]; then
     echo -e "\n${GREEN}==========================================${NC}"

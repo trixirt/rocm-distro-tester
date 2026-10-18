@@ -153,24 +153,14 @@ echo -e "[Step 3/4-b] Verifying Filesystem Performance Standards..."
 FILE_SYSTEM_TYPE=$(df --output=fstype "$DOCKER_DATA_ROOT" | tail -1)
 
 if [ "$FILE_SYSTEM_TYPE" = "xfs" ]; then
-    # Extract block size using xfs_info with a robust grep/awk approach
     if command -v xfs_info &> /dev/null; then
-        # Use perl-compatible regex to grab the number after bsize=
-        CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep 'data' | grep -oP 'bsize=\K[0-9]+')
+        # Use robust parsing to find bsize= number regardless of spacing or line length
+        CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep '^data' | sed 's/.*bsize=\([0-9]*\).*/\1/')
         
         if [ "$CURRENT_BSIZE" = "32768" ]; then
             log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
-        elif [ -z "$CURRENT_BSIZE" ]; then
-            # Fallback to manual parsing if grep -P fails on the system
-            CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep 'data' | awk '{for(i=1;i<=NF;i++) if($i ~ /bsize=/) print $i}' | cut -d= -f2)
-            
-            if [ "$CURRENT_BSIZE" = "32768" ]; then
-                log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
-            else
-                log_fail "XFS detected, but block size is ${CURRENT_BSIZE:-unknown}. Required: 32768. Recreate mount with mkfs.xfs -b size=32768."
-            fi
         else
-            log_fail "XFS detected, but block size is ${CURRENT_BSIZE}. Required: 32768. Recreate mount with mkfs.xfs -b size=32768."
+            log_fail "XFS detected, but block size is ${CURRENT_BSIZE}. Required: 32768. \n      Recreate mount with mkfs.xfs -b size=32768."
         fi
     else
         echo -e "${RED}WARNING: xfs_info not found. Cannot validate bsize. Please install xfsprogs or manually verify format.${NC}" >&2
@@ -185,6 +175,18 @@ fi
 CURRENT_DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}')
 if [ "$CURRENT_DOCKER_ROOT" != "$DOCKER_DATA_ROOT" ]; then
     log_fail "Configuration Mismatch: Docker daemon is using '$CURRENT_DOCKER_ROOT', but script expects '$DOCKER_DATA_ROOT'."
+    
+    echo -e "\n${RED}Likely Causes:${NC}" >&2
+    echo "  1. /etc/docker/daemon.json does not contain the 'data-root' entry." >&2
+    echo "  2. The daemon was restarted before the file was correctly saved, or it doesn't exist." >&2
+    
+    echo -e "\n${RED}How to Fix:${NC}" >&2
+    log_info "  A) Create or edit /etc/docker/daemon.json:" >&2
+    log_info "     sudo mkdir -p /etc/docker" >&2
+    printf '{\n  \"data-root\": \"%s\"\n}\n' "$DOCKER_DATA_ROOT" | sudo tee /etc/docker/daemon.json >&2
+    
+    log_info "  B) Restart the Docker daemon to apply changes:" >&2
+    echo "     sudo systemctl daemon-reload && sudo systemctl restart docker" >&2
 fi
 
 # 4. Check Total and Remaining Space on the specific mount point (>= 500GB)

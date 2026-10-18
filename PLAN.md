@@ -161,6 +161,7 @@ To support a complete matrix build (targeting ~1000 distinct Dockerfiles across 
 | Configuration Metric | Requirement / Standard | Implementation Details |
 |----------------------|------------------------|------------------------|
 | **OS Architecture** | 64-bit x86_64 (or ARM64 if supported) | Ubuntu/Fedora/RHEL base compatibility |
+| **Builder Compute Type** | CPU/RAM/Storage focused — NO GPUs required for this node type | Isolated build environment; GPUs reserved strictly for target test harnesses |
 | **Docker Version** | v20.10+ with BuildKit enabled | Required for `DOCKER_BUILDKIT=1` builds |
 | **Storage on Builder** | **≥500GB dedicated capacity** | Root partition used only for OS; `/rocm-builder` handles all image layers and registries |
 | **Data Root Directory** | `/rocm-builder` (Mounted) | Configured via `daemon.json` to isolate build space from system root |
@@ -172,7 +173,7 @@ Before attempting matrix builds, every builder node must pass the `verify_builde
 
 | Requirement | Description |
 |-------------|-------------|
-| **Registry Alias Identity** | Must resolve to `EXPECTED_IP` (e.g., 192.168.1.25) in `/etc/hosts` |
+| **Registry Alias Identity** | Must resolve dynamically via `getent hosts` or strict `/etc/hosts` parsing. No longer bound to hardcoded IPs |
 | **Docker Root Dir Alignment** | Must be configured as `/rocm-builder` and active in daemon config |
 | **Storage Capacity** | Minimum **500GB total volume** on the `/rocm-builder` mount point |
 | **Directory Permissions** | Strict ownership: `root:root` mode `0700` (Required for Docker security) |

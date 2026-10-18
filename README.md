@@ -4,7 +4,12 @@
 
 ---
 
-*AI development: pi-coding-agent Fedora package with Ollama Qwen3.5:35b backend, running on AMD Radeon Pro W7900*
+*AI development:
+
+coding agent: pi-coding-agent
+backend: ollama
+models: Qwen3.6:35b, Qwen3.5:35b
+AMD hardware: Strix Halo, Radeon Pro W7900 *
 
 ---
 

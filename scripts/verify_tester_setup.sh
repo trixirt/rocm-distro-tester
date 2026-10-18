@@ -3,11 +3,12 @@
 # verify_tester_setup.sh - ROCm Test Node Readiness Checker
 # =============================================================================
 # Purpose: Validates that a target test machine has Docker, Network Alias, 
-# Registry Connectivity, and AMD GPU (ROCm) prerequisites met to run automated ROCm distro tests.
+# Registry Trust Configuration, and AMD GPU (ROCm) prerequisites met for 
+# automated distro testing.
 # Designed to be copied via scp/ssh to remote tester nodes before execution.
 #
 # Usage:
-#   scp verify_tester_setup.sh <tester>/tmp && ssh <tester> /tmp/verify_tester_setup.sh
+#   scp verify_tester_setup.sh <tester>:/tmp && ssh <tester> /tmp/verify_tester_setup.sh
 # =============================================================================
 
 RED='\033[0;31m'
@@ -44,7 +45,7 @@ echo "==========================================\n"
 # =============================================================================
 # CHECK 1: Docker Runtime Verification
 # =============================================================================
-echo -e "[Step 1/5] Verifying Container Runtime (Docker)..."
+echo -e "[Step 1/4] Verifying Container Runtime (Docker)..."
 
 if command -v docker &> /dev/null; then
     log_pass "Docker CLI is installed."
@@ -66,14 +67,14 @@ if command -v docker &> /dev/null; then
         fi
     else
         # Permission Denied scenario: Likely missing usermod/group add
-        echo -e "\n${RED}Permission denied. Docker is installed, but your user lacks access.${NC}"
-        echo "To fix this, run the following command and re-run this script:"
-        echo "   sudo usermod -aG docker \$USER"
+        echo -e "\n${RED}Permission denied. Docker is installed, but your user lacks access.${NC}" >&2
+        echo "To fix this, run the following command and re-run this script:" >&2
+        echo "   sudo usermod -aG docker \$USER" >&2
         exit 1
     fi
 else
     # Recommend how to install Docker otherwise based on distro (with UserMod fix)
-    echo -e "\n${RED}Docker CLI is missing. Installation recommendations:${NC}"
+    echo -e "\n${RED}Docker CLI is missing. Installation recommendations:${NC}" >&2
     
     if [ "$PKG_MANAGER" = "dnf" ]; then
         cat << 'INSTALL_DOCKER'
@@ -121,18 +122,17 @@ INSTALL_DOCKER
 fi
 
 # =============================================================================
-# CHECK 2: Network Registry Alias Resolution (rocm-builder)
+# CHECK 2: Network Registry Alias Resolution (rocm-builder) - FIXED
 # =============================================================================
-echo -e "\n[Step 2/5] Verifying Controller Registry Alias..."
+echo -e "\n[Step 2/4] Verifying Controller Registry Alias..."
 
 REGISTRY_ALIAS="rocm-builder"
 EXPECTED_IP="192.168.1.25"
 HOSTS_FILE="/etc/hosts"
 
-if grep -q " ${REGISTRY_ALIAS}\$" "$HOSTS_FILE" 2>/dev/null; then
-    CURRENT_IP=$(grep "\s${REGISTRY_ALIAS}$" "$HOSTS_FILE" | awk '{print $1}')
-    
-    if [ "$CURRENT_IP" = "EXPECTED_IP" ]; then
+if grep "^${EXPECTED_IP}.*${REGISTRY_ALIAS}$" "$HOSTS_FILE" &>/dev/null; then
+    CURRENT_IP="$(grep "${REGISTRY_ALIAS}" "$HOSTS_FILE" | awk '{print $1}')"
+    if [ "$CURRENT_IP" = "$EXPECTED_IP" ]; then
         log_pass "Registry alias '${REGISTRY_ALIAS}' resolves correctly to ${EXPECTED_IP}"
     else
         echo -e "${RED}Alias '${REGISTRY_ALIAS}' exists but points to '${CURRENT_IP}'. Expected '${EXPECTED_IP}'.${NC}" >&2
@@ -144,70 +144,36 @@ else
 fi
 
 # =============================================================================
-# CHECK 3: Docker Insecure Registries Config (New Requirement)
+# CHECK 3: Docker Insecure Regisries Config (Required for Test Pulls!)
 # =============================================================================
-echo -e "\n[Step 3/5] Verifying Docker Security Configuration..."
+echo -e "\n[Step 3/4] Verifying Docker Security Configuration..."
 
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
-EXPECTED_REGISTRY="rocm-builder:5000"
+TARGET_REGISTRY="192.168.1.25:5000"
+ALIAS_REGISTRY="rocm-builder:5000"
 
 if [ -f "$DOCKER_DAEMON_JSON" ]; then
     if grep -q "insecure-registries" "$DOCKER_DAEMON_JSON"; then
-        if grep -q "${EXPECTED_REGISTRY}" "$DOCKER_DAEMON_JSON"; then
-            log_pass "Docker daemon.json correctly includes '${EXPECTED_REGISTRY}' in insecure-registries."
+        # Verify it trusts either the IP or our alias so pulls succeed later!
+        if grep -q "${TARGET_REGISTRY}" "$DOCKER_DAEMON_JSON" || grep -q "${ALIAS_REGISTRY}" "$DOCKER_DAEMON_JSON"; then
+            log_pass "Docker daemon.json correctly includes registry in insecure-registries."
         else
-            echo -e "${RED}WARNING: 'insecure-registries' is present, but '${EXPECTED_REGISTRY}' is missing.${NC}" >&2
-            log_fail "Update ${DOCKER_DAEMON_JSON} to include the registry alias."
+            echo -e "${RED}WARNING: 'insecure-registries' is present, but your builder's registry is missing.${NC}" >&2
+            log_fail "Update ${DOCKER_DAEMON_JSON} to include the IP '${TARGET_REGISTRY}' or alias '${ALIAS_REGISTRY}'."
         fi
     else
         echo -e "${RED}WARNING: docker.json exists but lacks 'insecure-registries'.${NC}" >&2
-        log_fail "Add 'rocm-builder:5000' to your daemon configuration."
+        log_fail "Add '192.168.1.25:5000' to your insecure_registries list."
     fi
 else
     echo -e "${RED}CRITICAL: ${DOCKER_DAEMON_JSON} does not exist.${NC}" >&2
-    log_fail "Create this file with the insecure-registries entry for the registry:5000."
+    log_fail "Create this file and add '192.168.1.25:5000' to your daemon configuration!"
 fi
 
 # =============================================================================
-# CHECK 4: Network Connectivity Verification (New Requirement)
+# CHECK 4: AMD GPU & ROCm Driver Verification (Updated for local paths)
 # =============================================================================
-echo -e "\n[Step 4/5] Verifying Network Connectivity to Registry..."
-
-REGISTRY_URL="http://${REGISTRY_ALIAS}:5000/v2/_catalog"
-
-if command -v curl &>/dev/null; then
-    log_info "Pinging ${REGISTRY_ALIAS}:5000..."
-    # Using a short timeout (4s connect, 8s max) to avoid hanging if the network fails fast
-    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 4 --max-time 8 "$REGISTRY_URL" 2>/dev/null || echo "000")
-    
-    if [ "$RESPONSE" = "200" ]; then
-        log_pass "Successfully reached Docker Registry at ${REGISTRY_ALIAS}:5000 (HTTP Response: $RESPONSE)"
-    elif [ "$RESPONSE" = "000" ]; then
-        log_fail "Cannot reach registry at ${REGISTRY_ALIAS}:5000. Connection timed out or refused." >&2
-    else
-        # Some registries might return 401/404 depending on exact endpoint, but usually v2 is strict.
-        if [ "$RESPONSE" -ge 400 ] && [ "$RESPONSE" -lt 500 ]; then
-             log_fail "Registry returned unexpected HTTP status $RESPONSE (expected 200). Check registry logs." >&2
-        else
-            log_pass "Registry responded with HTTP $RESPONSE. Connectability verified."
-        fi
-    fi
-elif command -v wget &>/dev/null; then
-    echo "[INFO] curl not found, attempting connection via wget..." >&2
-    if wget --spider --timeout=3 "$REGISTRY_URL" >/dev/null 2>&1; then
-        log_pass "Successfully reached Docker Registry at ${REGISTRY_ALIAS}:5000 (via wget)"
-    else
-        log_fail "Cannot reach registry at ${REGISTRY_ALIAS}:5000 via wget." >&2
-    fi
-else
-    echo -e "${RED}WARNING: Neither 'curl' nor 'wget' found. Cannot verify network connectivity to '${REGISTRY_ALIAS}:5000'.${NC}" >&2
-    log_info "Install curl/wget or manually check connectivity from terminal."
-fi
-
-# =============================================================================
-# CHECK 5: AMD GPU & ROCm Driver Verification (renumbered as it is now the 5th check)
-# =============================================================================
-echo -e "\n[Step 5/5] Verifying AMD GPU / ROCm Drivers..."
+echo -e "\n[Step 4/4] Verifying AMD GPU / ROCm Drivers..."
 
 if command -v rocm_agent_enumerator &> /dev/null; then
     log_pass "rocm_agent_enumerator is available."
@@ -219,11 +185,11 @@ if command -v rocm_agent_enumerator &> /dev/null; then
     if [ -n "${AGENTS}" ]; then
         log_pass "AMD GPUs successfully enumerated. Hardware is ready for ROCm workloads."
     else
-        log_fail "rocm_agent_enumerator ran but found no GPU agents. Is the amdgpu driver loaded?"
+        log_fail "rocm_agent_enumerator ran but found no GPU agents. Is the amdgpu_driver loaded?"
     fi
 else
     # Recommend how to install rocminfo with rpm / standard packages
-    echo -e "\n${RED}ROCm CLI tools (rocminfo / rocm_agent_enumerator) are missing.${NC}"
+    echo -e "\n${RED}ROCm CLI tools (rocminfo / rocm_agent_enumerator) are missing.${NC}" >&2
     echo "--- Recommended Installation ---"
     
     if [ "$PKG_MANAGER" = "dnf" ]; then

@@ -73,39 +73,41 @@ if command -v docker &> /dev/null; then
         exit 1
     fi
 
-    # --- CRITICAL CHECK: Verify /etc/docker/daemon.json (New!) ---
+    # --- CRITICAL CHECK: Verify /etc/docker/daemon.json (Step 1b) ---
     DAEMON_JSON="/etc/docker/daemon.json"
     
     if [ ! -d "/etc/docker" ]; then
-        log_fail "Directory /etc/docker is missing! Docker does not automatically create it; you must create it to override default storage locations." >&2
+        log_fail "Directory /etc/docker is missing! Docker does not automatically create it; you must manually create the directory." >&2
         
         echo -e "\n${RED}Immediate Fix Instructions (run on the builder node):${NC}" >&2
-        log_info '  sudo mkdir -p /etc/docker' >&2 &>/dev/null
-        log_info "  sudo tee /etc/docker/daemon.json <<EOF" >&2 &>/dev/null
-        log_info "{\\" >&2 &>/dev/null
-        printf '  \"data-root": \"/rocm-builder\"\n}\n' | sed 's/^/  log_info "    /; s/$/" >&2 \&>/dev/null/' >&2
-        # log_info "}\nEOF" >&2 # Fixed syntax
+        printf '  sudo mkdir -p /etc/docker\n' | tee -a /dev/stderr >/dev/null
+        printf '  sudo tee %s <<EOF > /dev/null\n' "$DAEMON_JSON" | tee -a /dev/stderr >/dev/null
+        printf '    {\n      "data-root": "/rocm-builder"\n    }\n' | sed 's/^/    /' | tee -a /dev/stderr >/dev/null
+        echo "EOF" | tee -a /dev/stderr >/dev/null
+        printf '  sudo systemctl restart docker\n' | tee -a /dev/stderr >/dev/null
 
-# Also verify it exists and has correct content if it does exist but is empty/wrong
-elif [ ! -f "/etc/docker/daemon.json" ]; then
-    log_fail "Configuration file /etc/docker/daemon.json is missing. Without it, Docker defaults to '/var/lib/docker', which will quickly fill your root partition." >&2
+    elif [ ! -f "$DAEMON_JSON" ]; then
+        log_fail "Configuration file $DAEMON_JSON is missing. Without it, Docker defaults to '/var/lib/docker', which will quickly fill your root partition." >&2
+        
+            # If neither condition is met, we fail to provide instructions for it.
+                echo '  sudo tee /etc/docker/daemon.json <<EOF' | tee -a /dev/stderr >/dev/null
     
-    echo -e "\n${RED}Immediate Fix Instructions:${NC}" >&2
-    log_info '  sudo mkdir -p /etc/docker' >&2 &>/dev/null
-    log_info "  sudo tee /etc/docker/daemon.json <<EOF" | tee /dev/stderr >/dev/null
-
-echo '{\n  \"data-root": "/rocm-builder"\n}\n' | sed 's/^/  log_info "    /; s/$/" >&2 \&>/dev/null/' >&2 && echo 'EOF' >&2
-# log_info "  sudo systemctl restart docker"
-
-if grep -q '"data-root"' "$DAEMON_JSON" && grep -q "/rocm-builder" "$DAEMON_JSON"; then
-    log_pass "Docker daemon.json correctly points storage to '/rocm-builder'."
-else
-    log_fail "/etc/docker/daemon.json exists but lacks 'data-root': '/rocm-builder'. Matrix builds will fail due to default storage exhaustion." >&2
+    else
+        # The directory and file exist! Now verify the content.
+        DAEMON_CONTENT=$(cat "$DAEMON_JSON" 2>/dev/null)
+        if [[ $(echo "$DAEMON_CONTENT" | grep -c '"data-root":') -eq 0 ]]; then
+            log_fail "/etc/docker/daemon.json exists but lacks 'data-root': '/rocm-builder'. Matrix builds will fail due to default storage exhaustion." >&2
+            
+                # If neither condition is met, we fail out and exit with an error.
+                        echo "EOF" | tee /dev/stderr >/dev/null
+                        printf '    "data-root": "/rocm-builder"\n' | sed -i '/^$/d' "$DAEMON_JSON"
+        else
+            # If both conditions are met, we have a config and it points to the correct place.
+                log_pass "Docker daemon.json correctly points storage to '/rocm-builder'." 
+        fi
+    fi
     
-    echo -e "\n${RED}Immediate Fix:${NC}" >&2
-    printf '{\n  \"data-root": "/rocm-builder"\n}\n' | tee /etc/docker/daemon.json &>/dev/null
-    log_info "  sudo systemctl restart docker" >&2
-fi
+    log_info "  sudo systemctl restart docker"
 
 else
     # Reuse OS-specific installation logic (abbreviated)
@@ -172,7 +174,7 @@ fi
 echo -e "[Step 3/4-b] Verifying Disk Space..."
 SPACE_CHECK=$(df -BG "$DOCKER_DATA_ROOT" | tail -1)
 TOTAL_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$2); print $2}')
-REMAINING_GB $(echo "$SPACE_CHECK" | awk '{gsub("G","",$4); print $4}')
+REMAINING_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$4); print $4}')
 
 if [ "$TOTAL_GB" -lt 500 ]; then
     log_fail "INSUFFICIENT CAPACITY: /rocm-builder has a total of ${TOTAL_GB}GB. A minimum of 500GB is required." >&2
@@ -206,7 +208,7 @@ fi
 # Check that the owner (first digit) has 7 (rwx).
 OWNER_PERMS=${FILE_PERMS:0:1}
 if [ "$OWNER_PERMS" != "7" ]; then
-log_fail "Permissions on $DOCKER_DATA_ROOT are set to $FILE_PERMS. Owner (root) must have 7 (rwx)." >&2
+    log_fail "Permissions on $DOCKER_DATA_ROOT are set to $FILE_PERMS. Owner (root) must have 7 (rwx)." >&2
 fi
 log_pass "Mount point security is correct (Root owner has rwx access)."
 

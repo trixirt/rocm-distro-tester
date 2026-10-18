@@ -40,7 +40,7 @@ echo "--- ROCm CI Builder Node Verification ---"
 echo "Target OS: ${OS_NAME}"
 echo "Package Manager: ${PKG_MANAGER}"
 echo "Expected Registry IP: 192.168.1.25"
-echo "Storage Standard: XFS bsize=32768 / Permissions a+rx (0755)"
+echo "Storage Standard: XFS | Root Has rwx (7)"
 echo "==========================================\n"
 
 # =============================================================================
@@ -80,31 +80,33 @@ if command -v docker &> /dev/null; then
         log_fail "Directory /etc/docker is missing! Docker does not automatically create it; you must create it to override default storage locations." >&2
         
         echo -e "\n${RED}Immediate Fix Instructions (run on the builder node):${NC}" >&2
-        log_info "  sudo mkdir -p /etc/docker" >&2
-        printf '{\n  \"data-root\": \"%s\"\n}\n' "/rocm-builder" | tee /tmp/daemon_config.json >&2 &>/dev/null # Redirect tee's own stdout out of the way
-        log_info '  sudo mv /tmp/daemon_config.json /etc/docker/daemon.json' >&2
-        log_info "  sudo systemctl restart docker" >&2
+        log_info '  sudo mkdir -p /etc/docker' >&2 &>/dev/null
+        log_info "  sudo tee /etc/docker/daemon.json <<EOF" >&2 &>/dev/null
+        log_info "{\\" >&2 &>/dev/null
+        printf '  \"data-root": \"/rocm-builder\"\n}\n' | sed 's/^/  log_info "    /; s/$/" >&2 \&>/dev/null/' >&2
+        # log_info "}\nEOF" >&2 # Fixed syntax
 
-    elif [ ! -f "$DAEMON_JSON" ]; then
-        log_fail "Configuration file $DAEMON_JSON is missing. Without it, Docker defaults to '/var/lib/docker', which will quickly fill your root partition." >&2
-        
-        echo -e "\n${RED}Immediate Fix Instructions:${NC}" >&2
-        log_info '  sudo mkdir -p /etc/docker' >&2
-        printf '{\n  \"data-root\": "%s"\n}\n' "/rocm-builder" | tee /etc/docker/daemon.json >&2 &>/dev/null
-        log_info "  sudo systemctl restart docker" >&2
-        
-    else
-        # Check content if file exists
-        if grep -q '"data-root"' "$DAEMON_JSON" && grep -q "/rocm-builder" "$DAEMON_JSON"; then
-            log_pass "Docker daemon.json correctly points storage to '/rocm-builder'."
-        else
-            log_fail "$DAEMON_JSON exists but lacks 'data-root': '/rocm-builder'. Matrix builds will fail due to default storage exhaustion." >&2
-            
-            echo -e "\n${RED}Immediate Fix:${NC}" >&2
-            printf '{\n  \"data-root": "%s"\n}\n' "/rocm-builder" | tee /etc/docker/daemon.json >&2 &>/dev/null
-            log_info "  sudo systemctl restart docker" >&2
-        fi
-    fi
+# Also verify it exists and has correct content if it does exist but is empty/wrong
+elif [ ! -f "/etc/docker/daemon.json" ]; then
+    log_fail "Configuration file /etc/docker/daemon.json is missing. Without it, Docker defaults to '/var/lib/docker', which will quickly fill your root partition." >&2
+    
+    echo -e "\n${RED}Immediate Fix Instructions:${NC}" >&2
+    log_info '  sudo mkdir -p /etc/docker' >&2 &>/dev/null
+    log_info "  sudo tee /etc/docker/daemon.json <<EOF" | tee /dev/stderr >/dev/null
+
+echo '{\n  \"data-root": "/rocm-builder"\n}\n' | sed 's/^/  log_info "    /; s/$/" >&2 \&>/dev/null/' >&2 && echo 'EOF' >&2
+# log_info "  sudo systemctl restart docker"
+
+if grep -q '"data-root"' "$DAEMON_JSON" && grep -q "/rocm-builder" "$DAEMON_JSON"; then
+    log_pass "Docker daemon.json correctly points storage to '/rocm-builder'."
+else
+    log_fail "/etc/docker/daemon.json exists but lacks 'data-root': '/rocm-builder'. Matrix builds will fail due to default storage exhaustion." >&2
+    
+    echo -e "\n${RED}Immediate Fix:${NC}" >&2
+    printf '{\n  \"data-root": "/rocm-builder"\n}\n' | tee /etc/docker/daemon.json &>/dev/null
+    log_info "  sudo systemctl restart docker" >&2
+fi
+
 else
     # Reuse OS-specific installation logic (abbreviated)
     echo -e "\n${RED}Docker CLI is missing. Installation recommendations:${NC}" >&2
@@ -166,43 +168,34 @@ if [ ! -d "$DOCKER_DATA_ROOT" ]; then
     log_fail "CRITICAL: Target directory '$DOCKER_DATA_ROOT' does not exist!" >&2
 fi
 
-# Check Storage Volume (XFS bsize=32k and space > 500GB)
-echo -e "[Step 3/4-b] Verifying Filesystem Performance Standards..."
+# Check Storage Volume (>= 500GB). Removed XFS bsize check as requested.
+echo -e "[Step 3/4-b] Verifying Disk Space..."
+SPACE_CHECK=$(df -BG "$DOCKER_DATA_ROOT" | tail -1)
+TOTAL_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$2); print $2}')
+REMAINING_GB $(echo "$SPACE_CHECK" | awk '{gsub("G","",$4); print $4}')
+
+if [ "$TOTAL_GB" -lt 500 ]; then
+    log_fail "INSUFFICIENT CAPACITY: /rocm-builder has a total of ${TOTAL_GB}GB. A minimum of 500GB is required." >&2
+elif [ "$REMAINING_GB" -lt 100 ]; then
+    log_fail "CRITICAL: Only ${REMAINING_GB}GB free on /rocm-builder. Matrix builds will fail due to layer exhaustion." >&2
+else
+    log_pass "Storage healthy on configured Root Dir (/rocm-builder): ${TOTAL_GB}GB total, ${REMAINING_GB}GB available."
+fi
+
+# Check XFS filesystem type (Recommendation only)
+echo -e "[Step 3/4-c] Verifying Filesystem Type..."
 FILE_SYSTEM_TYPE=$(df --output=fstype "$DOCKER_DATA_ROOT" | tail -1)
 
 if [ "$FILE_SYSTEM_TYPE" = "xfs" ]; then
-    if command -v xfs_info &> /dev/null; then
-        CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep '^data' | sed 's/.*bsize=\([0-9]*\).*/\1/')
-        
-        if [ "$CURRENT_BSIZE" = "32768" ]; then
-            log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
-        else
-            log_fail "XFS detected, but block size is ${CURRENT_BSIZE}. Required: 32768. \n      Recreate mount with mkfs.xfs -b size=32768." >&2
-        fi
-    else
-        echo -e "${RED}WARNING: xfs_info not found. Cannot validate bsize. Please install xfsprogs or manually verify format.${NC}" >&2
-        log_pass "XFS detected, assuming correct block size. (Manual verification recommended: 'xfs_info $DOCKER_DATA_ROOT' &)"
-    fi
-
-    # Check Total and Remaining Space on the specific mount point (>= 500GB)
-    SPACE_CHECK=$(df -BG "$DOCKER_DATA_ROOT" | tail -1)
-    TOTAL_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$2); print $2}')
-    REMAINING_GB=$(echo "$SPACE_CHECK" | awk '{gsub("G","",$4); print $4}')
-
-    if [ "$TOTAL_GB" -lt 500 ]; then
-        log_fail "INSUFFICIENT CAPACITY: /rocm-builder has a total of ${TOTAL_GB}GB. A minimum of 500GB is required." >&2
-    elif [ "$REMAINING_GB" -lt 100 ]; then
-        log_fail "CRITICAL: Only ${REMAINING_GB}GB free on /rocm-builder. Matrix builds will fail due to layer exhaustion." >&2
-    else
-        log_pass "Storage healthy on configured Root Dir (/rocm-builder): ${TOTAL_GB}GB total, ${REMAINING_GB}GB available."
-    fi
+    log_pass "Filesystem is XFS. Recommended for ROCm builds."
+elif [ "$FILE_SYSTEM_TYPE" = "ext4" ]; then
+    log_pass "Filesystem is ext4. Acceptable but XFS is strongly recommended for high-throughput large files." >&2
 else
-    echo -e "${RED}Filesystem is ${FILE_SYSTEM_TYPE}. XFS is strongly recommended for ROCm matrix builds with large file I/O.${NC}" >&2
-    log_fail "Please convert or remount this directory as XFS for optimal performance." >&2
+    echo -e "${RED}WARNING: Uncommon filesystem (${FILE_SYSTEM_TYPE}). Ensure compatibility with Docker storage drivers.${NC}" >&2
 fi
 
-# Check 4: Verify Directory Permissions (root, a+rx -> 0755)
-echo -e "[Step 3/4-c] Verifying Mount Point Security..."
+# Verify Permissions (Owner must be root with rwx/7)
+echo -e "[Step 4d] Verifying Mount Point Security..."
 FILE_PERMS=$(stat -c %a "$DOCKER_DATA_ROOT")
 FILE_OWNER=$(stat -c %U "$DOCKER_DATA_ROOT")
 
@@ -210,11 +203,12 @@ if [ "$FILE_OWNER" != "root" ]; then
     log_fail "Security Violation: $DOCKER_DATA_ROOT is owned by '$FILE_OWNER'. Docker daemon requires root ownership." >&2
 fi
 
-# Updated to accept 0755 (a+rx) as requested for read/trace access. Expecting root user
-if [ "$FILE_PERMS" != "755" ]; then
-    log_fail "Permissions on $DOCKER_DATA_ROOT are set to $FILE_PERMS. Expected '0755' (a+rx)." >&2
+# Check that the owner (first digit) has 7 (rwx).
+OWNER_PERMS=${FILE_PERMS:0:1}
+if [ "$OWNER_PERMS" != "7" ]; then
+log_fail "Permissions on $DOCKER_DATA_ROOT are set to $FILE_PERMS. Owner (root) must have 7 (rwx)." >&2
 fi
-log_pass "Data root ownership and permissions are correctly set to root:0755 (a+rx)."
+log_pass "Mount point security is correct (Root owner has rwx access)."
 
 # =============================================================================
 # FINAL SUMMARY

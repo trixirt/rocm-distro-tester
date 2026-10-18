@@ -40,7 +40,7 @@ echo "--- ROCm CI Builder Node Verification ---"
 echo "Target OS: ${OS_NAME}"
 echo "Package Manager: ${PKG_MANAGER}"
 echo "Expected Registry IP: 192.168.1.25"
-echo "Storage Standard: XFS with bsize=32768"
+echo "Storage Standard: XFS bsize=32768 / Permissions a+rx (0755)"
 echo "==========================================\n"
 
 # =============================================================================
@@ -124,7 +124,7 @@ else
 fi
 
 # =============================================================================
-# CHECK 3: Storage Capacity & Filesystem Verification (/rocm-builder)
+# CHECK 3: Storage & Mount Point Security (/rocm-builder)
 # =============================================================================
 echo -e "\n[Step 3/4] Verifying Container Data Root (/rocm-builder)..."
 
@@ -134,27 +134,28 @@ if [ ! -d "$DOCKER_DATA_ROOT" ]; then
     log_fail "CRITICAL: Target directory '$DOCKER_DATA_ROOT' does not exist!"
 fi
 
-# 1. Verify Security Ownership and Permissions (root, 0700)
+# 1. Verify Security Ownership and Permissions (root, a+rx -> 0755)
 FILE_PERMS=$(stat -c %a "$DOCKER_DATA_ROOT")
 FILE_OWNER=$(stat -c %U "$DOCKER_DATA_ROOT")
 
 if [ "$FILE_OWNER" != "root" ]; then
-    log_fail "Security Violation: $DOCKER_DATA_ROOT is owned by '$FILE_OWNER'. It must be 'root'."
+    log_fail "Security Violation: $DOCKER_DATA_ROOT is owned by '$FILE_OWNER'. Docker daemon requires root ownership."
 fi
 
-if [ "$FILE_PERMS" != "700" ] && [ "$FILE_PERMS" != "750" ]; then
-    echo -e "${RED}WARNING: Permissions ($FILE_PERMS) on $DOCKER_DATA_ROOT are unusual. Docker recommends '0700'.${NC}" >&2
+# Updated to accept 0755 (a+rx) as requested for read/trace access
+if [ "$FILE_PERMS" != "755" ]; then
+    log_fail "Permissions on $DOCKER_DATA_ROOT are set to $FILE_PERMS. Expected '0755' (a+rx)."
 fi
-log_pass "Data root ownership and permissions are valid for Docker."
+log_pass "Data root ownership and permissions are correctly set to root:0755 (a+rx)."
 
-# 2. Verify XFS Filesystem Type (Optimized for Large Files/ROCm)
-echo -e "[Step 3/4-b] Verifying Filesystem Performance Standards (XFS bsize=32k)..."
-FILE_SYSTEM_TYPE=$(df --output=fstype /rocm-builder | tail -1)
+# 2. Verify XFS Filesystem Type & Block Size (bsize=32k)
+echo -e "[Step 3/4-b] Verifying Filesystem Performance Standards..."
+FILE_SYSTEM_TYPE=$(df --output=fstype "$DOCKER_DATA_ROOT" | tail -1)
 
 if [ "$FILE_SYSTEM_TYPE" = "xfs" ]; then
     # Extract block size using xfs_info
     if command -v xfs_info &> /dev/null; then
-        CURRENT_BSIZE=$(xfs_info /rocm-builder 2>/dev/null | grep 'data' | awk '{print $3}' | cut -d= -f2)
+        CURRENT_BSIZE=$(xfs_info "$DOCKER_DATA_ROOT" 2>/dev/null | grep 'data' | awk '{print $3}' | cut -d= -f2)
         
         if [ "$CURRENT_BSIZE" = "32768" ]; then
             log_pass "Filesystem is XFS with optimal bsize=32768 (optimized for large file reads)."
@@ -163,7 +164,7 @@ if [ "$FILE_SYSTEM_TYPE" = "xfs" ]; then
         fi
     else
         echo -e "${RED}WARNING: xfs_info not found. Cannot validate bsize. Please install xfsprogs or manually verify format.${NC}" >&2
-        log_pass "XFS detected, assuming correct block size. (Manual verification recommended: 'xfs_info /rocm-builder')"
+        log_pass "XFS detected, assuming correct block size. (Manual verification recommended: 'xfs_info $DOCKER_DATA_ROOT')"
     fi
 else
     echo -e "${RED}Filesystem is ${FILE_SYSTEM_TYPE}. XFS is strongly recommended for ROCm matrix builds with large file I/O.${NC}" >&2
@@ -190,7 +191,7 @@ else
 fi
 
 # =============================================================================
-FINAL SUMMARY
+# FINAL SUMMARY
 # =============================================================================
 if [ "$FAIL_COUNT" -eq 0 ]; then
     echo -e "\n${GREEN}==========================================${NC}"

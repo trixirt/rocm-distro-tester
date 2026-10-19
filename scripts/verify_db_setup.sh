@@ -5,8 +5,9 @@
 # Purpose: Validates that a target machine is ready to host the persistent
 # state stack (PostgreSQL + state-svc + artifact store) planned in
 # PLAN.md Section 7 on the dedicated database disk.
-# SCOPE: host preparation ONLY — run this BEFORE any container is started.
-# It never inspects docker, running databases, or network services.
+# SCOPE: host preparation ONLY — run this BEFORE the state containers start.
+# It inspects the docker CLI/config (a host property) but never the running
+# state services, Postgres, or the SQL itself.
 #
 # CHECKS (strictly READ-ONLY — this script never modifies the system):
 #   [1] /rocm-db exists and is a DEDICATED mount point (own block device)
@@ -21,6 +22,9 @@
 #       - device class (SSD vs rotational — informational at this workload)
 #   [5] Layout & ownership: pg/ artifacts/ backups/ (warning w/ fix hints if
 #       absent), no world-writable, owner root or uid-999 (postgres image UID)
+#   [6] Docker runtime & infra-registry trust: docker usable + daemon.json
+#       trusts rocm-builder:5001 (samples/daemon.json.db), unless co-hosted
+#       with the builder (rocm-builder = 127.0.0.1, loopback-trusted)
 #
 # Usage:
 #   scp verify_db_setup.sh <state_host>:/tmp && ssh <state_host> /tmp/verify_db_setup.sh
@@ -31,6 +35,17 @@
 
 set -u -o pipefail
 
+# --- OS / package manager detection (same pattern as verify_tester_setup.sh) ---
+OS_NAME="Unknown Linux"
+PKG_MANAGER="unknown"
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS_NAME="${NAME:-$OS_NAME}"
+fi
+if command -v dnf &>/dev/null; then PKG_MANAGER="dnf"
+elif command -v apt-get &>/dev/null; then PKG_MANAGER="apt"
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -40,6 +55,11 @@ DB_ROOT="${DB_ROOT:-/rocm-db}"
 MIN_TOTAL_GB="${MIN_TOTAL_GB:-500}"
 MIN_FREE_GB="${MIN_FREE_GB:-100}"
 MIN_FREE_INODES="${MIN_FREE_INODES:-100000}"
+
+# State node pulls infra images (postgres, state-svc, dashboard) from here.
+REGISTRY_ALIAS="${REGISTRY_ALIAS:-rocm-builder}"
+INFRA_PORT="${INFRA_PORT:-5001}"
+BUILDER_IP="${BUILDER_IP:-192.168.1.25}"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -60,15 +80,16 @@ fi
 
 echo -e "\n=========================================="
 echo "--- ROCm State/DB Node Storage Verification ---"
-echo "Target Mount Root: ${DB_ROOT}"
-echo "Standard: ext4 | ${MIN_TOTAL_GB}GB+ total, ${MIN_FREE_GB}GB+ free"
-echo "Inode Floor: ${MIN_FREE_INODES} free inodes"
+echo "Target OS:            ${OS_NAME} (${PKG_MANAGER})"
+echo "Target Mount Root:    ${DB_ROOT}"
+echo "Standard:             ext4 | ${MIN_TOTAL_GB}GB+ total, ${MIN_FREE_GB}GB+ free | ${MIN_FREE_INODES}+ inodes"
+echo "Infra registry trust: ${REGISTRY_ALIAS}:${INFRA_PORT}"
 echo -e "==========================================\n"
 
 # =============================================================================
 # CHECK 1: /rocm-db exists and is a REAL, DEDICATED MOUNT POINT
 # =============================================================================
-echo -e "[1/5] Verifying mount point '${DB_ROOT}'..."
+echo -e "[1/6] Verifying mount point '${DB_ROOT}'..."
 
 # 1a. Must exist and be a directory
 if [ ! -d "$DB_ROOT" ]; then
@@ -102,7 +123,7 @@ fi
 # =============================================================================
 # CHECK 2: CAPACITY (>= MIN_TOTAL_GB total, >= MIN_FREE_GB free)
 # =============================================================================
-echo -e "\n[2/5] Verifying capacity..."
+echo -e "\n[2/6] Verifying capacity..."
 
 SPACE_LINE="$(df -BG "$DB_ROOT" 2>/dev/null | tail -1)"
 if [ -n "$SPACE_LINE" ]; then
@@ -127,7 +148,7 @@ fi
 # =============================================================================
 # CHECK 3: FILESYSTEM TYPE — ext4 required (PLAN §7.2)
 # =============================================================================
-echo -e "\n[3/5] Verifying filesystem type..."
+echo -e "\n[3/6] Verifying filesystem type..."
 
 case "${FS_TYPE:-<none>}" in
     ext4)
@@ -153,7 +174,7 @@ esac
 # =============================================================================
 # CHECK 4: DB-SPECIFIC FILESYSTEM PROPERTIES
 # =============================================================================
-echo -e "\n[4/5] Verifying DB-specific filesystem properties..."
+echo -e "\n[4/6] Verifying DB-specific filesystem properties..."
 
 # 4a. Mounted READ-WRITE
 if [ -z "$FS_OPTIONS" ]; then
@@ -225,7 +246,7 @@ fi
 # =============================================================================
 # CHECK 5: LAYOUT & OWNERSHIP (PLAN §7.2)
 # =============================================================================
-echo -e "\n[5/5] Verifying layout and ownership..."
+echo -e "\n[5/6] Verifying layout and ownership..."
 
 LAYOUT_MISSING=""
 for sub in pg artifacts backups; do
@@ -266,6 +287,50 @@ if [ -d "$DB_ROOT" ]; then
             log_warn "Owner '${OWNER}' (uid ${OWNER_UID}) — neither root nor 999. The postgres entrypoint will chown an EMPTY pg/ at first boot; an already-populated dir owned by this uid would need: chown -R 999:999 ${DB_ROOT}/pg"
             ;;
     esac
+fi
+
+# =============================================================================
+# CHECK 6: DOCKER RUNTIME & INFRA-REGISTRY TRUST (rocm-builder:5001)
+# Modelled on CHECK 3 of verify_tester_setup.sh — testers trust :5000,
+# the state node trusts :5001.
+# =============================================================================
+echo -e "\n[6/6] Verifying Docker runtime & infra-registry trust (:${INFRA_PORT})..."
+
+# 6a. Docker must be present and usable (the state stack IS containers)
+if command -v docker &> /dev/null && docker info &>/dev/null; then
+    log_pass "Docker runtime is available on the state node."
+else
+    log_fail "Docker is required here (postgres/state-svc/dashboard run as containers) and is not present/usable."
+    if [ "$PKG_MANAGER" = "dnf" ]; then
+        log_hint "sudo dnf install docker-ce docker-ce-cli containerd.io && sudo systemctl start docker && sudo usermod -aG docker $USER"
+    elif [ "$PKG_MANAGER" = "apt" ]; then
+        log_hint "sudo apt-get install docker-ce docker-ce-cli containerd.io && sudo systemctl start docker && sudo usermod -aG docker $USER"
+    else
+        log_hint "Install a container runtime (docker.io / podman) and add $USER to its group."
+    fi
+fi
+
+# 6b. Registry trust for the infra images (PLAN §7.5.1)
+if [ "$(getent hosts "$REGISTRY_ALIAS" 2>/dev/null | awk '{print $1}' | head -n 1)" = "127.0.0.1" ]; then
+    log_pass "'${REGISTRY_ALIAS}' resolves to 127.0.0.1 (co-hosted builder) — Docker's loopback-HTTP exception covers 127.0.0.1:${INFRA_PORT}; no insecure-registries entry required."
+else
+    DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+    ALIAS_REGISTRY="${REGISTRY_ALIAS}:${INFRA_PORT}"
+    IP_REGISTRY="${BUILDER_IP}:${INFRA_PORT}"
+
+    if [ ! -f "$DOCKER_DAEMON_JSON" ]; then
+        log_fail "$DOCKER_DAEMON_JSON is missing on the state node — it cannot trust the infra registry (${ALIAS_REGISTRY})."
+        log_hint "cp <rocm-distro-tester>/samples/daemon.json.db $DOCKER_DAEMON_JSON && sudo systemctl restart docker"
+        log_hint "(If this node is ALSO the builder, merge samples/daemon.json.builder into the same file.)"
+    elif ! grep -q 'insecure-registries' "$DOCKER_DAEMON_JSON"; then
+        log_fail "$DOCKER_DAEMON_JSON lacks 'insecure-registries' — pulls from ${ALIAS_REGISTRY} will be rejected."
+        log_hint "Add the contents of samples/daemon.json.db, then: sudo systemctl restart docker"
+    elif ! grep -q "$ALIAS_REGISTRY" "$DOCKER_DAEMON_JSON" && ! grep -q "$IP_REGISTRY" "$DOCKER_DAEMON_JSON"; then
+        log_fail "'insecure-registries' exists but lists neither '${ALIAS_REGISTRY}' nor '${IP_REGISTRY}'."
+        log_hint "See samples/daemon.json.db for the expected entries, then: sudo systemctl restart docker"
+    else
+        log_pass "Docker daemon.json trusts the infra registry (:${INFRA_PORT})."
+    fi
 fi
 
 # =============================================================================

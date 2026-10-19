@@ -1,0 +1,6 @@
+{
+  "insecure-registries": [
+    "rocm-builder:5001",
+    "192.168.1.25:5001"
+  ]
+}

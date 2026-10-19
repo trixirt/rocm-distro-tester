@@ -129,17 +129,21 @@ This will:
 - Show next steps for test machine configuration
 
 **2. Configure Test Machines:**  
-On each test node where images will run:
-
-Edit `/etc/docker/daemon.json`:
-```json
-{
-  "insecure-registries": ["<builder-hostname>:5000"]
-}
-```
-
-Then restart Docker:
+On each test node where images will run:  
+Copy the repo's tester sample into place (it sets `insecure-registries` for this deployment):
 ```bash
+cp <rocm-distro-tester>/samples/daemon.json.tester /etc/docker/daemon.json
+# ...adjust the builder hostname/IP if yours differs, then:
+sudo systemctl restart docker
+```
+> Do not confuse the two samples: `daemon.json.tester` = `insecure-registries` (pull-side),
+> `daemon.json.builder` = `data-root` (build-side, for the builder node).
+
+**2b. Builder Node Docker Data Root:**  
+On the builder machine, before first build:
+```bash
+cp <rocm-distro-tester>/samples/daemon.json.builder /etc/docker/daemon.json
+# ...adjust 'data-root' if your build disk path differs, then:
 sudo systemctl restart docker
 ```
 

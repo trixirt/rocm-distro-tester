@@ -52,10 +52,10 @@ STEPS TO SETUP:
 1. Run setup script (creates service configuration if needed)
 2. Verify docker-compose.yaml exists (will use existing or create new one)  
 3. Service starts with: docker-compose -f docker-compose.dashboard.yml up -d
-4. Access dashboard at http://localhost:5001 from any machine on network
+4. Access dashboard at http://localhost:5002 from any machine on network
 
 AFTER SETUP:
-- Dashboard accessible at http://<builder-hostname>:5001
+- Dashboard accessible at http://<builder-hostname>:5002
 - API endpoints: /api/summary, /api/latest-results/<count>
 - View test results across all distros and packages in unified filtered interface
 
@@ -176,8 +176,8 @@ DRYRUNOUTPUT
     
     sleep 3  # Wait for container to initialize
     
-    if curl -s http://localhost:5001/api/summary >/dev/null; then
-        log "✅ Dashboard service started successfully at localhost:5001"
+    if curl -s http://localhost:5002/api/summary >/dev/null; then
+        log "✅ Dashboard service started successfully at localhost:5002"
         
         cat << 'POSTSTEP'
 
@@ -187,7 +187,7 @@ DASHBOARD DEPLOYMENT COMPLETE!
 
 Your test results dashboard is now available at:
 
-🌐 http://localhost:5001  OR  http://<builder-hostname>:5001
+🌐 http://localhost:5002  OR  http://<builder-hostname>:5002
 
 Available API endpoints:
 - GET /api/summary       - Overall statistics and success rates

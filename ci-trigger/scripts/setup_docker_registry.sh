@@ -1,117 +1,186 @@
 #!/bin/bash
 # =============================================================================
-# setup_docker_registry.sh - ROCm Local Registry Deployment Script
+# setup_docker_registry.sh - ROCm Registry Deployment (BOTH tiers)
 # =============================================================================
-# Purpose: Deploys the local Docker Registry (registry:2) on the builder node
-# using the dedicated /rocm-builder storage root.
+# Purpose: Deploys the two local Docker registries (registry:2) on the builder
+# node using the dedicated /rocm-builder storage root:
+#
+#   TIER   HOST PORT  CONTAINER            STORAGE                        IMAGES
+#   ----   ---------  -------------------  ---------------------------    -------------------------------
+#   test      5000    rocm-registry        /rocm-builder/registry-test    matrix test images (PLAN §6)
+#   infra     5001    rocm-infra-registry  /rocm-builder/registry-infra   postgres/state-svc/dashboard (PLAN §7.5.1)
+#
+# Security model: testers trust ONLY :5000 (samples/daemon.json.tester). The
+# infra registry is reachable by the builder (loopback) and state nodes only.
 #
 # Usage:
-#   ./setup_docker_registry.sh [--dry-run] [--verbose] [--help]
+#   ./setup_docker_registry.sh [--tier test|infra|both] [--dry-run] [--verbose] [--help]
+#
+# Env overrides: STORAGE_ROOT (default /rocm-builder), TEST_PORT (5000),
+#                INFRA_PORT (5001)
 # =============================================================================
 
 set -euo pipefail
 
-REGISTRY_NAME="rocm-registry"
-REGISTRY_PORT=5000
-DATA_ROOT="/rocm-builder/registry-data"
-
+REGISTRY_IMAGE="registry:2"
+STORAGE_ROOT="${STORAGE_ROOT:-/rocm-builder}"
+TEST_PORT="${TEST_PORT:-5000}"
+INFRA_PORT="${INFRA_PORT:-5001}"
+TIER="both"
 DRY_RUN=false
 VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --tier) TIER="${2:?--tier requires test|infra|both}"; shift 2;;
         --dry-run) DRY_RUN=true; shift;;
-        --verbose|-v) VERBOSE=true; set -x; shift;;
-        --help|-h) cat << HELPUSAGE
+        --verbose|-v) VERBOSE=true; shift;;
+        --help|-h) cat << 'HELPUSAGE'
 
-ROCm-Tester Docker Registry Setup Script
-=========================================
+ROCm Registry Setup Script (test + infra tiers)
+===============================================
 
-Deploys local Docker registry on builder for efficient image distribution.
+Deploys local Docker registries on the builder for image distribution:
 
-USAGE:
-  ./setup_docker_registry.sh [OPTIONS]
+  --tier test    rocm-registry          host :5000   (matrix test images)
+  --tier infra   rocm-infra-registry    host :5001   (postgres/state-svc/dashboard)
+  --tier both    (default)
 
 OPTIONS:
-  --dry-run       Show what would be done without changes
-  --verbose, -v   Verbose output during setup
-  --help, -h      Show this help message
+  --tier TIER    Which registry tier(s) to deploy (test|infra|both)
+  --dry-run      Show what would be done without changes
+  --verbose, -v  Verbose output during setup
+  --help, -h     Show this help
 
-POST-SETUP STEPS (see PLAN.md Section 6 for details):
-1. Configure test machines to trust registry at http://<builder>:5000
-2. Build and push images using scripts/build-all-images.sh
-3. Verify connectivity from test machines
+POST-SETUP STEPS:
+  test tier  -> testers need the trust entry: samples/daemon.json.tester
+  infra tier -> state node (if != builder) needs:      samples/daemon.json.db
+  builder    -> no extra docker config (loopback-HTTP covers 127.0.0.1:* ports)
 
+See PLAN.md Section 6 and Section 7.5.1 for full operational details.
 HELPUSAGE
         exit 0;;
+        *) echo "Unknown option: $1 (see --help)" >&2; exit 1;;
     esac
 done
 
-log() { echo "[REGISTRY] \$(date '+%Y-%m-%d %H:%M:%S') -\$*"; }
+case "$TIER" in test|infra|both) ;; *) echo "ERROR: --tier must be test|infra|both (got '${TIER}')" >&2; exit 1;; esac
+if [ "$VERBOSE" = "true" ]; then set -x; fi
 
-if [ "$DRY_RUN" = "true" ]; then
-    log "Running in dry-run mode"
-else
-    if ! command -v docker &>/dev/null; then
-        echo "ERROR: Docker not installed. Aborting." >&2
-        exit 1
-    fi
-    
-    # --- Storage Validation (Strict /rocm-builder requirement) ---
-    if [ ! -d "/rocm-builder" ]; then
-        echo "ERROR: /rocm-builder directory does not exist." >&2
-        echo "Please mount your dedicated drive and create this directory before running setup scripts." >&2
-        exit 1
-    fi
+log()  { echo -e "[REGISTRY] $(date '+%Y-%m-%d %H:%M:%S') - $*"; }
+fail() { echo -e "[REGISTRY] ERROR: $*" >&2; exit 1; }
 
-    # Check strict permissions required by Docker daemon (root, mode 0700)
-    FILE_PERMS=$(stat -c %a /rocm-builder 2>/dev/null || echo "N/A")
-    if [ "$FILE_PERMS" != "700" ]; then
-        echo "ERROR: /rocm-builder permissions are incorrect (${FILE_PERMS})." >&2
-        echo "Permissions must be '0700' (owner-only read/write) to ensure Docker daemon security." >&2
-        exit 1
-    fi
-
-    # Create the specific subdirectory for registry data
-    mkdir -p "${DATA_ROOT}"
-    
-    # Clean up any previous failed attempts
-    docker stop "${REGISTRY_NAME}" >/dev/null 2>&1 || true
-    docker rm "${REGISTRY_NAME}" >/dev/null 2>&1 || true
-    
-    # Deploy registry container with the new storage path
-    log "Starting 'rocm-registry' using data root: ${DATA_ROOT}"
-    docker run -d \
-        --name "${REGISTRY_NAME}" \
-        --restart unless-stopped \
-        -p "${REGISTRY_PORT}:5000" \
-        -v "${DATA_ROOT}:/var/lib/registry" \
-        registry:2
-    
-    sleep 3
-    
-    # Validate deployment
-    if curl -s http://localhost:${REGISTRY_PORT}/v2/_catalog >/dev/null; then
-        log "✓ Registry successfully deployed at http://localhost:${REGISTRY_PORT}"
-        echo ""
-        cat << 'INSTRUCTIONS'
-
-NEXT STEPS (configure each test machine):
-1. Edit /etc/docker/daemon.json on the GUEST nodes:
-   {
-     "insecure-registries": ["<builder-hostname>:5000"]
-   }
-   
-2. Restart Docker daemon on all guest nodes:
-   sudo systemctl restart docker
-
-3. Verify connectivity from a test node:
-   curl http://<builder-hostname>:5000/v2/_catalog
-   
-See PLAN.md Section 6 for full operational details.
-INSTRUCTIONS
+# HTTP liveness probe with fallbacks (registry:2 image itself ships no curl)
+http_ok() {
+    local url="$1" hostport host port
+    if command -v curl &>/dev/null; then
+        curl -fsS --max-time 5 "$url" >/dev/null 2>&1
+    elif command -v wget &>/dev/null; then
+        wget -q -T 5 -O /dev/null "$url" 2>/dev/null
     else
-        echo "WARNING: Registry validation failed on builder. Check logs with: docker logs ${REGISTRY_NAME}" >&2
-        exit 1
+        # last resort: raw TCP connect (proves the port is open)
+        hostport="${url#http://}"
+        host="${hostport%%/*}"; port="${host##*:}"; host="${host%%:*}"
+        (exec 3<>"/dev/tcp/${host}/${port}" && exec 3>&- 3<&-) 2>/dev/null
     fi
+}
+
+# =============================================================================
+# PER-TIER SETUP
+# =============================================================================
+setup_one() {
+    local tier="$1" name="$2" port="$3" datadir="$4"
+
+    log "=== Tier '${tier}': ${name} @ host port ${port} (storage: ${datadir}) ==="
+
+    # --- Storage validation (strict for real runs; warn-only under --dry-run) ---
+    if [ ! -d "$STORAGE_ROOT" ]; then
+        if [ "$DRY_RUN" = "true" ]; then
+            log "  [dry-run][WARN] ${STORAGE_ROOT} absent — a real run needs it: mount the dedicated drive first (verify_db_setup.sh / verify_builder_setup.sh)"
+        else
+            fail "${STORAGE_ROOT} does not exist. Mount the dedicated drive and create it first (see verify_db_setup.sh / verify_builder_setup.sh)."
+        fi
+    else
+        local perms owner
+        perms=$(stat -c '%a' "$STORAGE_ROOT" 2>/dev/null || echo 'N/A')
+        owner=$(stat -c '%U' "$STORAGE_ROOT" 2>/dev/null || echo 'N/A')
+        if [ "$owner" = "root" ] && [ "$perms" = "700" ]; then
+            log "  storage OK: ${STORAGE_ROOT} (root:0700)"
+        elif [ "$DRY_RUN" = "true" ]; then
+            log "  [dry-run][WARN] ${STORAGE_ROOT} is '${owner}:${perms}' — a real run requires root:0700 (see verify_builder_setup.sh)"
+        else
+            fail "${STORAGE_ROOT} is owned by '${owner}' mode '${perms}' — must be root:0700 (see verify_builder_setup.sh)."
+        fi
+    fi
+
+    # Loopback trust: Docker's default loopback-HTTP exception covers
+    # 127.0.0.1:<any-port>, so no insecure-registries entry is needed for
+    # same-host pushes/pulls to either registry.
+    log "  loopback trust: 127.0.0.1:${port} — no builder daemon.json change required."
+
+    if [ "$DRY_RUN" = "true" ]; then
+        log "  [dry-run] docker run -d --name ${name} --restart unless-stopped \\"
+        log "            -p ${port}:5000 -v ${datadir}:/var/lib/registry --label rocm-tier=${tier} ${REGISTRY_IMAGE}"
+        return 0
+    fi
+
+    mkdir -p "${datadir}"
+
+    # Clean up any previous instance
+    docker stop "$name" >/dev/null 2>&1 || true
+    docker rm   "$name" >/dev/null 2>&1 || true
+
+    log "  starting '${name}' from ${REGISTRY_IMAGE}"
+    docker run -d \
+        --name "$name" \
+        --restart unless-stopped \
+        -p "${port}:5000" \
+        -v "${datadir}:/var/lib/registry" \
+        --label "rocm-tier=${tier}" \
+        "$REGISTRY_IMAGE" >/dev/null
+
+    sleep 3
+
+    local url="http://localhost:${port}"
+    if http_ok "${url}/v2/_catalog"; then
+        log "  ✓ ${name} healthy at ${url} (catalog endpoint OK)"
+        if [ "$tier" = "infra" ]; then
+            log "  NOTE: pin the infra images here for offline state-stack boot, e.g.:"
+            log "        docker pull postgres:16"
+            log "        docker tag  postgres:16  \${BUILDER_ALIAS}:${port}/postgres"
+            log "        docker push \${BUILDER_ALIAS}:${port}/postgres"
+        fi
+    else
+        docker logs "$name" 2>&1 | tail -5 >&2 || true
+        fail "${name} failed the liveness check on port ${port} (log lines above); audit with scripts/verify_registry_${tier}.sh"
+    fi
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+log "ROCm registry setup starting (tier=${TIER}, storage=${STORAGE_ROOT})"
+if [ "$DRY_RUN" = "true" ]; then
+    log "  running in DRY-RUN mode (no docker, no filesystem writes)"
 fi
+
+if [ "$TIER" = "test" ] || [ "$TIER" = "both" ]; then
+    setup_one "test"  "rocm-registry"       "$TEST_PORT"  "${STORAGE_ROOT}/registry-test"
+fi
+
+if [ "$TIER" = "infra" ] || [ "$TIER" = "both" ]; then
+    setup_one "infra" "rocm-infra-registry" "$INFRA_PORT" "${STORAGE_ROOT}/registry-infra"
+fi
+
+# =============================================================================
+# POST-SETUP GUIDE (informational; the per-tier work is host-specific)
+# =============================================================================
+log "Per-tier next steps:"
+if [ "$TIER" = "test" ] || [ "$TIER" = "both" ]; then
+    log "  [test/:5000]  each TESTER machine: trust entry from samples/daemon.json.tester → sudo systemctl restart docker → check with scripts/verify_registry_test.sh"
+fi
+if [ "$TIER" = "infra" ] || [ "$TIER" = "both" ]; then
+    log "  [infra/:5001] state node (if NOT the builder): trust entry from samples/daemon.json.db → check with scripts/verify_db_setup.sh"
+    log "                if the state node IS the builder: nothing extra — 127.0.0.1:* is loopback-trusted by default"
+fi
+log "Audit any time: scripts/verify_registry_test.sh  |  scripts/verify_registry_infra.sh"

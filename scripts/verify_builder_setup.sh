@@ -80,23 +80,24 @@ if command -v docker &> /dev/null; then
         log_fail "Directory /etc/docker is missing! Docker does not automatically create it; you must manually create the directory." >&2
         
         echo -e "\n${RED}Immediate Fix Instructions (run on the builder node):${NC}" >&2
-        printf '  sudo mkdir -p /etc/docker\n' | tee -a /dev/stderr >/dev/null
-        printf '  sudo tee %s <<EOF > /dev/null\n' "$DAEMON_JSON" | tee -a /dev/stderr >/dev/null
-        printf '    {\n      "data-root": "/rocm-builder"\n    }\n' | sed 's/^/    /' | tee -a /dev/stderr >/dev/null
-        echo "EOF" | tee -a /dev/stderr >/dev/null
-        printf '  sudo systemctl restart docker\n' | tee -a /dev/stderr >/dev/null
+        echo "   Start from the repo's builder sample (BUILDER sample, not the tester one):" >&2
+        echo "     cp <rocm-distro-tester>/samples/daemon.json.builder /etc/docker/daemon.json" >&2
+        echo "     # ...adjust 'data-root' if your build dir differs, then:" >&2
+        echo "     sudo systemctl restart docker" >&2
 
     elif [ ! -f "$DAEMON_JSON" ]; then
         log_fail "Configuration file $DAEMON_JSON is missing. Without it, Docker defaults to '/var/lib/docker', which will quickly fill your root partition." >&2
-        
-            # If neither condition is met, we fail to provide instructions for it.
-                echo '  sudo tee /etc/docker/daemon.json <<EOF' | tee -a /dev/stderr >/dev/null
-    
+        echo "   Fix: cp <rocm-distro-tester>/samples/daemon.json.builder $DAEMON_JSON && sudo systemctl restart docker" >&2
+
     else
         # The directory and file exist! Now verify the content.
         DAEMON_CONTENT=$(cat "$DAEMON_JSON" 2>/dev/null)
         if [[ $(echo "$DAEMON_CONTENT" | grep -c '"data-root":') -eq 0 ]]; then
-            log_fail "/etc/docker/daemon.json exists but lacks 'data-root': '/rocm-builder'. Matrix builds will fail due to default storage exhaustion." >&2
+            echo "$DAEMON_CONTENT" | head -3 | sed 's/^/  /' >&2
+        echo "   Expected (see samples/daemon.json.builder in the repo):" >&2
+        echo '     {"data-root": "/rocm-builder"}' >&2
+        echo "   If your builder's build dir differs, adjust that value, then: sudo systemctl restart docker" >&2
+        log_fail "/etc/docker/daemon.json exists but lacks 'data-root': '/rocm-builder'. Matrix builds will fail due to default storage exhaustion." >&2
             
                 # If neither condition is met, we fail out and exit with an error.
                         echo "EOF" | tee /dev/stderr >/dev/null

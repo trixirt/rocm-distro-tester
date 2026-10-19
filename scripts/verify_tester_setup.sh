@@ -40,12 +40,13 @@ echo "--- ROCm Tester Node Verification ---"
 echo "Target OS: ${OS_NAME}"
 echo "Package Manager: ${PKG_MANAGER}"
 echo "Registry Alias to Test: rocm-builder (port 5000)"
+echo "State Host to Test:     rocm-db (port 8443)"
 echo "==========================================\n"
 
 # =============================================================================
 # CHECK 1: Docker Runtime Verification
 # =============================================================================
-echo -e "[Step 1/4] Verifying Container Runtime (Docker)..."
+echo -e "[Step 1/5] Verifying Container Runtime (Docker)..."
 
 if command -v docker &> /dev/null; then
     log_pass "Docker CLI is installed."
@@ -125,7 +126,26 @@ fi
 # =============================================================================
 # CHECK 2: Network Registry Alias Resolution (rocm-builder)
 # =============================================================================
-echo -e "\n[Step 2/4] Verifying Controller Registry Alias..."
+echo -e "\n[Step 2/5] Verifying State-Client Packages (curl)..."
+
+if command -v curl &> /dev/null; then
+    log_pass "curl is installed (required to push artifacts/results to rocm-db via verify_state_setup.sh)."
+else
+    echo -e "\n${RED}curl is missing. It is REQUIRED for pushing test results to the state stack:${NC}" >&2
+    if [ "$PKG_MANAGER" = "dnf" ]; then
+        echo "   sudo dnf install curl" >&2
+    elif [ "$PKG_MANAGER" = "apt" ]; then
+        echo "   sudo apt-get update && sudo apt-get install curl" >&2
+    else
+        echo "   Install the 'curl' package for your distribution." >&2
+    fi
+    log_fail "curl not found — tester nodes cannot report jobs/artifacts without it."
+fi
+
+# =============================================================================
+# CHECK 3: Network Registry Alias Resolution (rocm-builder)
+# =============================================================================
+echo -e "\n[Step 3/5] Verifying Controller Registry Alias..."
 
 REGISTRY_ALIAS="rocm-builder"
 EXPECTED_IP="192.168.1.25"
@@ -142,7 +162,7 @@ fi
 # =============================================================================
 # CHECK 3: Docker Insecure Registries Config (Required for Test Pulls!)
 # =============================================================================
-echo -e "\n[Step 3/4] Verifying Docker Security Configuration..."
+echo -e "\n[Step 4/5] Verifying Docker Security Configuration..."
 
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 TARGET_REGISTRY="192.168.1.25:5000"
@@ -152,10 +172,10 @@ if [ ! -f "$DOCKER_DAEMON_JSON" ]; then
     # If the file doesn't exist, the daemon will default back to saving images on your main root partition!
     log_fail "Configuration file $DOCKER_DAEMON_JSON does not exist. Docker will likely use /var/lib/docker unless you create it." >&2
     echo -e "\n${RED}Immediate Fix Instructions:${NC}" >&2
-    log_info '  sudo mkdir -p /etc/docker' | tee -a /dev/stderr >/dev/null
-    log_info "  sudo tee $DOCKER_DAEMON_JSON <<EOF" | tee -a /dev/stderr >/dev/null
-    log_info "    {\n      \"insecure-registries\": [\"${ALIAS_REGISTRY}\"]\n    }" | tee -a /dev/stderr >/dev/null
-    echo "EOF" | tee -a /dev/stderr >/dev/null
+    log_info "  Start from the repo's sample (TESTER sample: insecure-registries — not the builder one):" >&2
+    log_info "    cp <rocm-distro-tester>/samples/daemon.json.tester /etc/docker/daemon.json" >&2
+    log_info "    # ...adjust the IP/alias if your builder's is different, then:" >&2
+    log_info "    sudo systemctl restart docker" >&2
     exit 1 # Stop here because without this, builds will fail due to storage exhaustion.
 fi
 
@@ -166,19 +186,22 @@ if grep -q "insecure-registries" "$DOCKER_DAEMON_JSON"; then
         log_pass "Docker daemon.json correctly includes registry in insecure-registries."
     else
         echo -e "${RED}WARNING: 'insecure-registries' is present, but your builder's registry is missing.${NC}" >&2
-        log_fail "Update ${DOCKER_DAEMON_JSON} to include the IP '${TARGET_REGISTRY}' or alias '${ALIAS_REGISTRY}'." >&2
+        echo -e "See samples/daemon.json.tester in the repo for the expected entries ('${TARGET_REGISTRY}' and/or '${ALIAS_REGISTRY}')." >&2
+        echo -e "Update ${DOCKER_DAEMON_JSON} to include the IP '${TARGET_REGISTRY}' or alias '${ALIAS_REGISTRY}', then: sudo systemctl restart docker" >&2
+        log_fail "insecure-registries does not list the builder registry." >&2
         exit 1
     fi
 else
     echo -e "${RED}WARNING: docker.json exists but lacks 'insecure-registries'.${NC}" >&2
-    log_fail "Add 'rocm-builder:5000' to your insecure_registries list." >&2
+    echo -e "See samples/daemon.json.tester in the repo for the expected content, then: sudo systemctl restart docker" >&2
+    log_fail "Add 'rocm-builder:5000' to your insecure-registries list." >&2
     exit 1
 fi
 
 # =============================================================================
 # CHECK 4: AMD GPU & ROCm Driver Verification
 # =============================================================================
-echo -e "\n[Step 4/4] Verifying AMD GPU / ROCm Drivers..."
+echo -e "\n[Step 5/5] Verifying AMD GPU / ROCm Drivers..."
 
 if command -v rocm_agent_enumerator &> /dev/null; then
     log_pass "rocm_agent_enumerator is available."

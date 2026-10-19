@@ -249,11 +249,11 @@ See [PLAN.md](./PLAN.md#section-6-docker-registry-infrastructure-new-v015) for c
 ./ci-trigger/scripts/setup_dashboard.sh -v
 
 # Access from any browser:
-http://localhost:5001   # On builder machine
-http://<builder-hostname>:5001  # From other machines on network
+http://localhost:5002   # On builder machine  (was 5001 — now reserved for the infra image registry, PLAN §7.5.1)
+http://<builder-hostname>:5002  # From other machines on network
 
 # API access for programmatic use:
-curl http://localhost:5001/api/summary | jq '.statistics'
+curl http://localhost:5002/api/summary | jq '.statistics'
 ```
 
 ### Dashboard Features:

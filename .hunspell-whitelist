@@ -1,0 +1,104 @@
+# -----------------------------------------------------------------------------
+# .hunspell-whitelist — project-approved technical vocabulary for spell checks
+#
+# Usage (from repo root; requires: sudo dnf install hunspell hunspell-en-US):
+#
+# Check any file/prose against en_US, exempting this whitelist:
+#
+#   tr -cs 'A-Za-z' '\n' < <file> | sort -u | grep -E '^[A-Za-z]{4,}$' \
+#   | hunspell -d en_US -C - 2>/dev/null | grep '^&' | awk '{print $2}' | sort -u \
+#   | grep -ivFx -f .hunspell-whitelist          #  => empty output means clean
+#
+# One word per line. Case-variant lines are listed so exact-match greps work.
+# -----------------------------------------------------------------------------
+# Product / project
+ROCm
+rocm-distro-tester
+rocm-distro-containers
+rocmstate
+rocmtest
+# Databases / state stack
+postgres
+Postgres
+PostgreSQL
+state-svc
+isready
+healthz
+timestamptz
+http
+https
+# Filesystems & storage
+ext4
+ext3
+xfs
+tmpfs
+btrfs
+zfs
+ramfs
+inode
+inodes
+atime
+noatime
+relatime
+strictatime
+nosuid
+noexec
+filesystem
+Filesystem
+FILESYSTEM
+NVMe
+# Distro / CI vocabulary
+distro
+distros
+smoketest
+smoketests
+copr-preview
+# GPU / ROCm
+gpu
+GPUs
+gfx1100
+gfx1201
+kfd
+rocminfo
+rocrand
+hipblas
+rocblas
+rocsparse
+# Shell / tooling (avoids false positives on common commands & builtins)
+curl
+docker
+daemon
+registry
+basename
+bsize
+chmod
+chown
+config
+Config
+containerd
+elif
+entrypoint
+esac
+findmnt
+fstab
+FSTYPE
+gsub
+hostname
+init
+json
+JSON
+mkdir
+mkfs
+pipefail
+printf
+segs
+skfsS
+stderr
+sudo
+systemctl
+tmp
+usermod
+# Words hunspell's en_US dict misses
+reachability
+overridable
+inspectable

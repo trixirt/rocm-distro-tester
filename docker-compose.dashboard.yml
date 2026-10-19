@@ -8,7 +8,9 @@ services:
     container_name: rocm-dashboard
     restart: unless-stopped
     ports:
-      - "5001:5001"
+      # Host port 5002 (PLAN §7.5.1: 5001 reserved for the infra image registry).
+      # The app itself still listens on 5001 inside the container.
+      - "5002:5001"
     volumes:
       # Mount the results directory from builder machine
       - /var/rocm-distro-tester/results:/var/rocm-distro-tester/results

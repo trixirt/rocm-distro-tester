@@ -1,9 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# verify_registry_images.sh - Dynamic ROCm Registry Inventory Check
+# verify_registry_test.sh - ROCm TEST-IMAGE Registry Inventory (port 5000)
 # =============================================================================
-# Purpose: Verifies connectivity to rocm-builder, validates TCP port 
-# reachability, and lists all currently hosted images. 
+# Purpose: Verifies connectivity to the TEST-IMAGE registry (rocm-builder:5000),
+# validates TCP port reachability, and lists all currently hosted images.
+# (Companion: verify_registry_infra.sh audits the :5001 infra registry.)
 # Designed for remote execution from tester/dashboard nodes without Docker client.
 #
 # Recommendation Implementation:
@@ -11,7 +12,7 @@
 # 2. Uses strict /etc/hosts parsing logic to avoid false positives.
 # =============================================================================
 
-REGISTRY_ALIAS="rocm-builder"
+REGISTRY_ALIAS="${REGISTRY_ALIAS:-rocm-builder}"
 DOCKER_COMPOSE_ALIAS="registry"
 REGISTRY_PORT=5000
 

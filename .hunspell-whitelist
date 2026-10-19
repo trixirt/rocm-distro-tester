@@ -193,3 +193,15 @@ hostport
 datadir
 liveness
 HELPUSAGE
+chowning
+DEBUGGABILITY
+healthwait
+journalctl
+pgdata
+PGDATA
+precheck
+psql
+reinit
+REINIT
+urandom
+dlogs

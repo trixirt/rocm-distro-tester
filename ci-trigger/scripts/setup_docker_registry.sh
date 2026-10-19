@@ -101,15 +101,28 @@ setup_one() {
             fail "${STORAGE_ROOT} does not exist. Mount the dedicated drive and create it first (see verify_db_setup.sh / verify_builder_setup.sh)."
         fi
     else
-        local perms owner
+        local perms owner user
         perms=$(stat -c '%a' "$STORAGE_ROOT" 2>/dev/null || echo 'N/A')
         owner=$(stat -c '%U' "$STORAGE_ROOT" 2>/dev/null || echo 'N/A')
-        if [ "$owner" = "root" ] && [ "$perms" = "700" ]; then
-            log "  storage OK: ${STORAGE_ROOT} (root:0700)"
+        user=$(id -un)
+        if [ "$owner" = "root" -o "$owner" = "$user" ] && [ "$perms" = "755" ] && [ -r "$STORAGE_ROOT" ]; then
+            log "  storage OK: ${STORAGE_ROOT} (${owner}:755, readable by ${user})"
         elif [ "$DRY_RUN" = "true" ]; then
-            log "  [dry-run][WARN] ${STORAGE_ROOT} is '${owner}:${perms}' — a real run requires root:0700 (see verify_builder_setup.sh)"
+            log "  [dry-run][WARN] ${STORAGE_ROOT} is '${owner}:${perms}' — a real run needs owner root|${user} mode 755 (see verify_builder_setup.sh)"
         else
-            fail "${STORAGE_ROOT} is owned by '${owner}' mode '${perms}' — must be root:0700 (see verify_builder_setup.sh)."
+            fail "${STORAGE_ROOT} is owned by '${owner}' mode '${perms}' — must be mode 755 owned by 'root' or '${user}' and readable (see verify_builder_setup.sh)."
+        fi
+    fi
+
+    # The registry itself writes as root (root docker daemon + in-container
+    # root), so a root-owned 755 datadir is sufficient; the invoker only needs
+    # it to be readable/traversable. If absent and the parent is user-writable,
+    # mkdir -p below creates it; otherwise the admin pre-creates it.
+    if [ ! -d "$datadir" ] && [ ! -w "$STORAGE_ROOT" ]; then
+        if [ "$DRY_RUN" = "true" ]; then
+            log "  [dry-run][WARN] ${datadir} absent and ${STORAGE_ROOT} not writable by ${user} — admin pre-create: sudo mkdir -p ${datadir} && sudo chmod 755 ${datadir}"
+        else
+            fail "${datadir} does not exist and ${STORAGE_ROOT} is not writable by '${user}' (a root-owned parent, as intended). Admin pre-create: sudo mkdir -p \"${datadir}\" && sudo chmod 755 \"${datadir}\""
         fi
     fi
 

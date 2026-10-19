@@ -40,7 +40,7 @@ echo "--- ROCm CI Builder Node Verification ---"
 echo "Target OS: ${OS_NAME}"
 echo "Package Manager: ${PKG_MANAGER}"
 echo "Expected Registry IP: 192.168.1.25"
-echo "Storage Standard: XFS | Root Has rwx (7)"
+echo "Storage Standard: XFS | 755, readable by user (root- or user-owned)"
 echo "==========================================\n"
 
 # =============================================================================
@@ -197,21 +197,53 @@ else
     echo -e "${RED}WARNING: Uncommon filesystem (${FILE_SYSTEM_TYPE}). Ensure compatibility with Docker storage drivers.${NC}" >&2
 fi
 
-# Verify Permissions (Owner must be root with rwx/7)
-echo -e "[Step 4d] Verifying Mount Point Security..."
+# Non-root deployment model: THIS script (and setup_docker_registry.sh) run as
+# a regular user. /rocm-builder and its tier subdirs are root-owned, mode 755
+# (user-readable/traversable). Registry containers write as root through the
+# root docker daemon, so no user write access is required.
+echo -e "[Step 4d] Verifying Mount Point Ownership & Permissions..."
+CURRENT_USER=$(id -un)
 FILE_PERMS=$(stat -c %a "$DOCKER_DATA_ROOT")
 FILE_OWNER=$(stat -c %U "$DOCKER_DATA_ROOT")
 
-if [ "$FILE_OWNER" != "root" ]; then
-    log_fail "Security Violation: $DOCKER_DATA_ROOT is owned by '$FILE_OWNER'. Docker daemon requires root ownership." >&2
+if [ "$FILE_OWNER" != "root" ] && [ "$FILE_OWNER" != "$CURRENT_USER" ]; then
+    echo "   Fix: sudo chown root:root \"$DOCKER_DATA_ROOT\" (or a service user)" >&2
+    log_fail "CRITICAL: $DOCKER_DATA_ROOT is owned by '$FILE_OWNER'. Owner must be 'root' or a service user such as '$CURRENT_USER'." >&2
 fi
 
-# Check that the owner (first digit) has 7 (rwx).
-OWNER_PERMS=${FILE_PERMS:0:1}
-if [ "$OWNER_PERMS" != "7" ]; then
-    log_fail "Permissions on $DOCKER_DATA_ROOT are set to $FILE_PERMS. Owner (root) must have 7 (rwx)." >&2
+if [ "$FILE_PERMS" != "755" ]; then
+    echo "   Fix: sudo chmod 755 \"$DOCKER_DATA_ROOT\"" >&2
+    log_fail "CRITICAL: $DOCKER_DATA_ROOT permissions are ${FILE_PERMS}. Expected 755 — non-root invokers must be able to read/traverse it." >&2
 fi
-log_pass "Mount point security is correct (Root owner has rwx access)."
+
+if [ ! -r "$DOCKER_DATA_ROOT" ] || [ ! -x "$DOCKER_DATA_ROOT" ]; then
+    echo "   Fix: sudo chmod 755 \"$DOCKER_DATA_ROOT\"" >&2
+    log_fail "CRITICAL: $DOCKER_DATA_ROOT is not readable/traversable by user '$CURRENT_USER'." >&2
+fi
+log_pass "Mount point is ${FILE_OWNER}:${FILE_PERMS} and usable by non-root invoker '$CURRENT_USER'."
+
+# Verify registry subdirs (mounted by ci-trigger/scripts/setup_docker_registry.sh)
+echo -e "[Step 4e] Verifying Registry Subdirectories..."
+for REG_SUBDIR in registry-test registry-infra; do
+    REG_FULL="${DOCKER_DATA_ROOT}/${REG_SUBDIR}"
+
+    if [ ! -d "$REG_FULL" ]; then
+        echo "   Fix: mkdir -p \"$REG_FULL\"" >&2
+        log_fail "CRITICAL: Registry subdirectory '$REG_FULL' does not exist (needed by setup_docker_registry.sh)." >&2
+    fi
+
+    REG_OWNER=$(stat -c %U "$REG_FULL")
+    REG_PERMS=$(stat -c %a "$REG_FULL")
+    if [ "$REG_PERMS" != "755" ]; then
+        echo "   Fix: sudo chmod 755 \"$REG_FULL\"" >&2
+        log_fail "CRITICAL: '$REG_FULL' permissions are ${REG_PERMS}. Expected 755 (must be readable/traversable by non-root invokers)." >&2
+    fi
+    if [ ! -r "$REG_FULL" ] || [ ! -x "$REG_FULL" ]; then
+        echo "   Fix: sudo chmod 755 \"$REG_FULL\"" >&2
+        log_fail "CRITICAL: '$REG_FULL' (owner ${REG_OWNER}) is not readable/traversable by user '$CURRENT_USER'." >&2
+    fi
+    log_pass "Registry subdirectory '$REG_FULL' is ${REG_OWNER}:${REG_PERMS}, readable by '$CURRENT_USER' (registry writes as root)."
+done
 
 # =============================================================================
 # FINAL SUMMARY

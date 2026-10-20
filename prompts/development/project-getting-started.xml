@@ -1,0 +1,161 @@
+<purpose>
+  You are a senior developer working on rocm-distro-tester.
+  This is a fresh checkout of the repository. Analyze the project in
+  depth, including the most recent commits, and deliver an overview
+  before any follow-on work begins.
+
+  <repo-layout> provides an overview of where to look and what each
+  area is responsible for.
+</purpose>
+
+<instructions>
+  <instruction>
+    write the full analysis to /tmp/rocm-distro-tester-getting-started.txt
+  </instruction>
+
+  <instruction>
+    Read the docs in intent order: README.md (what this is), PLAN.md
+    (how it is designed — note which Section each script implements),
+    INSTALL.md (target deployment), TODO.md (the handoff task sheet),
+    HISTORY.md (why it exists).
+  </instruction>
+
+  <instruction>
+    Review the last 20 commits (git log --oneline, then read the
+    interesting diffs) to establish what was built or changed most
+    recently and which work stream is active.
+  </instruction>
+
+  <instruction>
+    Verify the codebase against its own claims before trusting it:
+    - bash -n every shell script in scripts/ and ci-trigger/scripts/
+    - python3 -m py_compile on each poller in ci-trigger/*.py
+    - python3 -m pytest ci-trigger/tests/ -q (note: the dashboard test
+      module needs Flask installed; failures there are environmental,
+      not regressions)
+  </instruction>
+
+  <instruction>
+    Classify every component as production-grade, in-progress, or
+    draft. Draft code is characterized by: syntax errors, references
+    to files that do not exist, or behavior contradicting PLAN.md.
+    List each finding with file path and line number. Do not fix
+    anything during this analysis.
+  </instruction>
+
+  <instruction>
+    Cross-check the three pillars against their PLAN.md sections:
+    registries (Section 6) -> setup_docker_registry.sh,
+    pin_infra_images.sh, docker-compose*.yml; state DB (Section 7) ->
+    setup_db.sh, verify_db_setup.sh, schema plans; pollers (Section 1)
+    -> ci-trigger/poll_*.py. Flag any drift between plan and code.
+  </instruction>
+
+  <instruction>
+    End the report with a short list of suggested next steps, ordered
+    the way PLAN.md's own phased delivery sequence would suggest them.
+  </instruction>
+
+  <instruction>
+    If any instruction is confusing, suggest three better at the end of the report.
+  </instruction>
+
+  <instruction>
+    If any aditional data is needed, request it at the end of the report.
+  </instruction>
+</instructions>
+
+<project-context>
+
+  An automation layer on top of the manual
+  rocm-distro-containers test suite (~1,200 Dockerfiles across 8
+  distros). Turn "someone manually tests ROCm on the lab GPUs" into a
+  scheduled, parallel, reproducible service with an auditable record.
+
+</project-context>
+
+<repo-layout version="1.0">
+  <description>
+    Directory map of the rocm-distro-tester repository. Scripts are
+    the product; .md files are contract; tests mirror scripts.
+  </description>
+
+  <base-dir-relative-to type="root">
+    The repository root. Runbooks, compose files for the two registry
+    tiers and the interim dashboard, and the prompts/ corpus live
+    here.
+  </base-dir-relative-to>
+
+  <structure>
+    <!-- Documentation -->
+    <directory name="." type="root">
+      <files>
+        <file name="README.md" type="file" desc="High-level overview for non-technical readers. Current status table — trust its ✅/🟡/🔴 markers." />
+        <file name="PLAN.md" type="file" desc="The contract. Section 6 = registry tiering &amp; naming; Section 7 = state DB, runner protocol, schema, retention. Code that contradicts this file is in error." />
+        <file name="INSTALL.md" type="file" desc="Deployment runbook for builder / state / tester nodes." />
+        <file name="TODO.md" type="file" desc="Agent handoff task sheet (v0.1.6 era). A queue of validation tasks, not a live roadmap." />
+        <file name="HISTORY.md" type="file" desc="Origin story and decision log." />
+        <file name="docker-compose.registry.yml" type="file" desc="Test-tier registry :5000 deployment." />
+        <file name="docker-compose.dashboard.yml" type="file" desc="Interim dashboard, host :5002 (5001 is reserved for the infra registry)." />
+        <file name="samples/daemon.json.{builder,db,tester}" type="file" desc="Per-role Docker daemon configs (insecure-registries trust per tier)." />
+        <file name=".hunspell-whitelist" type="file" desc="Project vocabulary for spellchecking." />
+      </files>
+    </directory>
+
+    <!-- Registries, state DB, polling -->
+    <directory name="ci-trigger" type="directory" desc="The CI module: pollers, interim dashboard, setup and pinning scripts.">
+      <files>
+        <file name="poll_{fedora,ubuntu,archlinux,epel}_builds.py" type="file" desc="Distro build pollers. Each runs dnf/apt/pacman/repoquery inside a distro container and persists per-release JSON state under ci-trigger/results/" />
+        <file name="tests/" type="directory" desc="pytest suites for the pollers + dashboard, with shared fixtures in conftest.py" />
+        <file name="scripts/setup_docker_registry.sh" type="file" desc="Deploys both registry tiers (--tier test|infra), SELinux-safe bind mounts, non-root storage model." />
+        <file name="scripts/pin_infra_images.sh" type="file" desc="Pins infra images + rolling distro base images to :5001 with sha256- digest twins; re-run at the start of each test wave." />
+        <file name="scripts/setup_db.sh" type="file" desc="Boots postgres:16 from the infra registry on /rocm-db (host :5432, UID 999). Supports --status, --drop, --reinit." />
+        <file name="dashboard/" type="directory" desc="Interim Flask dashboard over *-result.json files. Frozen; slated for replacement by the Section 7 SQL-projection dashboard." />
+      </files>
+    </directory>
+
+    <!-- Deployment verification + legacy orchestration -->
+    <directory name="scripts" type="directory" desc="Node verification battery and build helpers.">
+      <files>
+        <file name="verify_{builder,db,state,tester,network_registry,registry_test,registry_infra}_setup.sh" type="file" desc="Pre-flight check suites per node role. Passing all of them greenlights deployment." />
+        <file name="verify_all_tests.sh" type="file" desc="Runs the whole battery." />
+        <file name="build-all-images.sh" type="file" desc="Build-and-push helper. Known draft-grade — do not trust without a review pass." />
+      </files>
+    </directory>
+
+    <!-- hipblas test assets -->
+    <directory name="pkg-tests" type="directory" desc="Per-package test content: Dockerfiles, C++ test sources, smoke scripts, package-config.yaml.">
+      <files>
+        <file name="hipblas/" type="directory" desc="The first and currently only package. Package configs, per-distro Dockerfiles, hipblas-tests/ (compile + GTest suite), smoke-tests/." />
+        <file name="ubuntu/ rhel/" type="directory" desc="Distro-specific test harnesses (dpkg-based vs rpm-based) shared across packages." />
+      </files>
+    </directory>
+
+    <!-- Prompt corpus -->
+    <directory name="prompts" type="directory" desc="Self-contained XML prompts for pi, invoked as: pi < prompt-file">
+      <files>
+        <file name="development/" type="directory" desc="Prompts that develop THIS project (this file lives here)." />
+      </files>
+    </directory>
+  </structure>
+
+  <related-repositories>
+    <repository name="rocm-distro-containers" location="~/rocm/rocm-distro-containers" desc="The manual test suite this project automates. Per-distro layout: <distro>/<release>/<package>/<test>/. Its 'copr-preview-pkgdiff' and friends are the pattern for what eventually lands in pkg-tests/. Prompts used to run those tests live in ~/ai/fedora-pi-prompts (test/, mock/, fedora-review/) — they are being migrated into this repository's prompts/test/ as test content is migrated." />
+    <repository name="fedora-pi-prompts" location="~/ai/fedora-pi-prompts" desc="Upstream prompt corpus for pi; the XML style of this file derives directly from that corpus." />
+  </related-repositories>
+
+  <environment>
+    Development and deployment run on AMD hardware (Strix Halo +
+    Radeon Pro W7900) with SELinux-Enforcing hosts and a small pool of
+    GPU tester nodes. All AI tooling is on-premise (pi-coding-agent
+    with Ollama). Nothing here talks to external LLM services.
+
+    Network landmarks (do not renumber):
+    - rocm-builder:5000 — test-tier registry (all testers trust)
+    - rocm-builder:5001 — infra-tier registry (builder/db roles only)
+    - state:8443 — planned state-svc (PLAN §7.3, not yet built)
+    - rocm-builder:5432 / host 5002 — postgres / dashboard
+    - /rocm-builder, /rocm-db — dedicated storage roots per role
+  </environment>
+
+</repo-layout>

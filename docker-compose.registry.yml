@@ -8,9 +8,12 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - registry_data:/var/lib/registry
+      # :z = SELinux relabel for the container (Enforcing hosts: without it the
+      # registry's writes to the store are denied — "mkdir permission denied" on push)
+      - registry_data:/var/lib/registry:z
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/v2/_catalog"]
+      # registry:2 ships no curl; wget -S exits 0 on 404 (proves HTTP + writable store)
+      test: ["CMD", "wget", "-S", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/v2/_catalog"]
       interval: 30s
       timeout: 10s
       retries: 3

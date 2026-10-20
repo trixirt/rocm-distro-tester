@@ -133,7 +133,7 @@ setup_one() {
 
     if [ "$DRY_RUN" = "true" ]; then
         log "  [dry-run] docker run -d --name ${name} --restart unless-stopped \\"
-        log "            -p ${port}:5000 -v ${datadir}:/var/lib/registry --label rocm-tier=${tier} ${REGISTRY_IMAGE}"
+        log "            -p ${port}:5000 -v ${datadir}:/var/lib/registry:z --label rocm-tier=${tier} ${REGISTRY_IMAGE}"
         return 0
     fi
 
@@ -148,20 +148,32 @@ setup_one() {
         --name "$name" \
         --restart unless-stopped \
         -p "${port}:5000" \
-        -v "${datadir}:/var/lib/registry" \
+        -v "${datadir}:/var/lib/registry:z" \
         --label "rocm-tier=${tier}" \
         "$REGISTRY_IMAGE" >/dev/null
 
     sleep 3
 
+    # Write probe: the catalog healthcheck only proves the store is READABLE.
+    # On SELinux-Enforcing hosts a container started without the :z relabel
+    # reads fine but cannot create its working dir — the push then 500s with
+    # "filesystem: mkdir ... permission denied". Force that exact write now,
+    # at deploy time while the failure is still diagnosable.
+    local probe
+    probe=$(docker exec "$name" sh -c 'mkdir -p /var/lib/registry/docker/registry/v2 2>&1 && echo ok' 2>&1) || true
+    if [ "$probe" != "ok" ]; then
+        log "  ✗ store write probe FAILED: $probe"
+        docker logs "$name" 2>&1 | tail -5 >&2 || true
+        fail "registry '${name}' cannot write its store (SELinux denial on an Enforcing host is the usual cause). Re-create it with this script (mount gets :z), or verify the SELinux context of the host dir (${datadir})."
+    fi
+    log "  ✓ store write probe OK (container may write blobs/manifests)"
+
     local url="http://localhost:${port}"
     if http_ok "${url}/v2/_catalog"; then
         log "  ✓ ${name} healthy at ${url} (catalog endpoint OK)"
         if [ "$tier" = "infra" ]; then
-            log "  NOTE: pin the infra images here for offline state-stack boot, e.g.:"
-            log "        docker pull postgres:16"
-            log "        docker tag  postgres:16  \${BUILDER_ALIAS}:${port}/postgres"
-            log "        docker push \${BUILDER_ALIAS}:${port}/postgres"
+            log "  NOTE: pin the infra images for offline state-stack boot:"
+            log "        ./ci-trigger/scripts/pin_infra_images.sh   (postgres:16 + state-svc/dashboard when built)"
         fi
     else
         docker logs "$name" 2>&1 | tail -5 >&2 || true

@@ -114,6 +114,8 @@ MIT License (see LICENSE file)
 
 ## Docker Registry Setup (Local Development & CI)
 
+> **Full deployment runbook (builder + state node + testers): see [INSTALL.md](./INSTALL.md).**
+
 ### Quick Start
 
 **1. Deploy Registry on Builder Machine:**

@@ -68,6 +68,12 @@ ROLLING_BASES=(
     "quay.io/centos/centos:stream10|centos-stream10"
 )
 
+# Static infrastructure base images: These are pinned locally to ensure 
+# deterministic builds for system tools (Dashboard, State-SVC) across your lab.
+INFRA_BASES=(
+    "ubuntu:24.04|linux-ubuntu-base"
+)
+
 DRY_RUN=false
 REBUILD=false
 VERBOSE=false
@@ -245,9 +251,19 @@ if [ "${BASES_MODE}" != "off" ]; then
     done
 fi
 
+# --- infra base set ------------------------------------------------------------
+if [ "${BASES_MODE}" != "off" ]; then
+    log "--- static infrastructure bases (pinned for system tooling) ---"
+    for entry in "${INFRA_BASES[@]}"; do
+        upstream="${entry%%|*}"
+        repo="${entry##*|}"
+        pin_one "${upstream}" "${repo}" "24.04" "required" "no"
+    done
+fi
+
 # --- final catalog -------------------------------------------------------------
 log "infra registry catalog now:"
 if [ "${DRY_RUN}" != "true" ]; then
     curl -fsS "http://${INFRA_HOST}:${INFRA_PORT}/v2/_catalog" 2>/dev/null | sed 's/^/    /' || true
 fi
-log "done. Next: rocm-db → setup_db.sh · builders → FROM ${BUILDER_ALIAS}:${INFRA_PORT}/fedora-rawhide:rawhide"
+log "done. Next: rocm-db → setup_db.sh · builders FROM ${BUILDER_ALIAS}:${INFRA_PORT}/linux-ubuntu-base:24.04 (or rolling targets)"

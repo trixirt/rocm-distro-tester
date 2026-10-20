@@ -451,6 +451,19 @@ services:
 
 **Catalog hygiene:** `verify_registry_test.sh` continues to inventory `:5000` only — the `:5001` catalog is deliberately outside that view (infrastructure, not artifacts).
 
+### §7.5.2 Strict System-Tool Base Image Standard (Ubuntu 24.04)
+**Policy:** All infrastructure management components (Dashboard, `state-svc`, build orchestrators, helper tools) **MUST** be built from the pinned base image `rocm-builder:5001/linux-ubuntu-base:24.04`.
+
+**Rationale for Ubuntu 24.04:**
+1.  **Determinism & Stability:** Unlike the rolling targets (`fedora-rawhide`, `archlinux-latest`) used to test package compatibility, system tools require a frozen, predictable environment. Ubuntu 24.04 (LTS) provides strict ABI and API stability across your entire lab.
+2.  **Distro Neutrality:** It serves as the ideal "common denominator" for Python/Flask applications and system utilities, minimizing vendor bias or upstream dependency quirks.
+3.  **Lab Alignment:** Since `ubuntu:latest` is a primary testing target, using an LTS base ensures your CI tooling stays mathematically close to one of its most active validation environments.
+
+**Enforcement:** The `Dockerfile` for any infra container should always declare:
+```dockerfile
+FROM rocm-builder:5001/linux-ubuntu-base:24.04
+```
+
 #### ♻️ 7.6 Retention & GC (policy = SQL, executor = `jobctl gc`)
 
 | Class | Lifetime | Notes |

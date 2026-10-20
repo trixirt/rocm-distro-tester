@@ -1,20 +1,20 @@
 # =============================================================================
-# ROCm-Tester: Test Results Dashboard Container (v0.1)
-# Flask web application hosted on builder machine for distributed test result display
-# Optimized for single-deploy, multi-test-node results aggregation and visualization
+# ROCm-Tester: Test Results Dashboard Container (v0.3)
+# Infrastructure component built on Ubuntu 24.04 for standardized CI consistency.
 # =============================================================================
 
-FROM python:3.11-slim-bookworm
+FROM rocm-builder:5001/linux-ubuntu-base:24.04
 
 LABEL maintainer="rocm-tester@example.com"
-LABEL description="Test Results Dashboard for ROCm-Tester project"
-LABEL version="0.1.5"
+LABEL description="Test Results Dashboard (Ubuntu 24.04 Infra Base)"
+LABEL version="0.3-stub"
 LABEL org.opencontainers.image.source = "https://github.com/rocm-tester/rocm-tester"
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    python3-pip \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home appuser
 

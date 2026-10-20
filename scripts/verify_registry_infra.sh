@@ -24,14 +24,12 @@ echo "Target Alias: ${REGISTRY_ALIAS}:${REGISTRY_PORT}"
 echo -e "==========================================================================\n"
 
 # =========================================================================
-# Step 1: Unified Host Resolution (DNS then strict /etc/hosts parsing)
+# Step 1: Strict /etc/hosts Resolution
 # =========================================================================
-echo "[Step 1/4] Resolving host alias..."
+echo "[Step 1/4] Resolving host alias from /etc/hosts..."
 
 resolve_alias() {
     local a="$1"
-    local ip=$(getent hosts "$a" 2>/dev/null | awk '{print $1}' | head -n 1)
-    if [ -n "$ip" ]; then return 0; fi
     local line=$(grep -v '^ *#' /etc/hosts 2>/dev/null | grep -w "$a" | head -n 1)
     if [ -n "$line" ]; then
         ip=$(echo "$line" | awk '{print $1}')
@@ -43,11 +41,10 @@ resolve_alias() {
 }
 
 if resolve_alias "$REGISTRY_ALIAS"; then
-    TARGET_IP=$(getent hosts "$REGISTRY_ALIAS" 2>/dev/null | awk '{print $1}' | head -n 1)
-    [ -z "$TARGET_IP" ] && TARGET_IP=$(grep -v '^ *#' /etc/hosts 2>/dev/null | grep -w "$REGISTRY_ALIAS" | head -n 1 | awk '{print $1}')
+    TARGET_IP=$(grep -v '^ *#' /etc/hosts 2>/dev/null | grep -w "$REGISTRY_ALIAS" | head -n 1 | awk '{print $1}')
     echo "✅ Resolved '${REGISTRY_ALIAS}' → ${TARGET_IP}"
 else
-    echo "❌ FAILURE: Could not resolve '${REGISTRY_ALIAS}'. Check DNS or /etc/hosts." >&2
+    echo "❌ FAILURE: Could not resolve '${REGISTRY_ALIAS}'. Ensure it is explicitly listed in /etc/hosts." >&2
     exit 1
 fi
 

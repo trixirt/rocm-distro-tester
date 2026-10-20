@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 800px; margin: 50px auto; text-align: center; padding: 40px; border: 1px solid #ddd; font-family: system-ui, -apple-system, sans-serif;">
+    <h1 style="color: #2c3e50;">ROCm-Distro-Tester Dashboard</h1>
+    <h2 style="color: #e67e22;">Hello World - System Initialized 🚀</h2>
+    
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+    
+    <p style="font-size: 1.2em;">Dashboard is online, but awaiting the **Postgres Backend** (Section 7 of PLAN.md).</p>
+    <p><b>Status:</b> <code>[Waiting for schema & db-setup]</code></p>
+
+    <div style="margin-top: 40px; text-align: left; background: #f8f9fa; padding: 20px; border-radius: 6px;">
+        <h3>Troubleshooting</h3>
+        <ul>
+            <li>If this page appears, the Flask container is healthy & reachable.</li>
+            <li>API Endpoint (<code>GET /api/summary</code>) is stubbed and returning dummy data.</li>
+            <li>No JSON files are currently being scanned (Per Section 7.9 policy).</li>
+        </ul>
+    </div>
+
+    <p style="font-size: 0.85em; color: #6c757d; margin-top: 50px;">Generated at {{ now.strftime('%Y-%m-%d %H:%M') }}</p>
+</div>
+{% endblock %}

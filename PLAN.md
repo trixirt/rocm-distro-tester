@@ -471,6 +471,18 @@ services:
 - Optional live update via `LISTEN/NOTIFY` in place of 5 s polling.
 - Retires: `ci-trigger/dashboard/app.py` (its `request`-import bug, mangled `/api/latest-results/(d+):i` route, and `status` vs `result` mismatch all die with it). `orchestrator.sh`'s `all-results.jsonl` and the smoke-script `*-result.json` writers are replaced by the `job.json` report of 7.3.
 
+### 🔀 Section 7.9: Hybrid Resource Routing (Idle Testers as Builders)
+**Purpose**: Maximize hardware utilization by allowing GPU tester nodes to act as Docker image builders when their specific test matrices are idle.
+
+Since database state acts as our "broker," any node can claim a `build` job if it has the necessary role, CPU/RAM headroom, and disk space. This turns "waiting for builds" time into actual build time.
+
+**Requirements:**
+1.  **Node Registration**: Nodes register with multiple roles: `roles = ['test', 'build']`.
+2.  **Priority Rebalancing**: The scheduler (`state-svc`) must automatically downgrade `build` jobs to `priority: -10` whenever a `test` queue exists (> 0 items), ensuring test latency (< 5 min SLA) is never compromised.
+3.  **Resource Quotas**: Build containers should use CPU/RAM cgroups (Docker limits) so they do not impact the node's own test runner or host OS when active in a `test` role.
+
+---
+
 #### ✅ 7.8 Phased Delivery & Definition of Done
 
 | Phase | Deliverable | Done when |
@@ -480,3 +492,63 @@ services:
 | 7.3 | Runner report-stub in `run.sh` (replaces `docker cp` cluster); GTest `test.log` → `test_cases` parser; `failure_class` classifier (grep-based v1) | one `check/` run on a tester node appears fully on dashboard with tail, cases, downloads |
 | 7.4 | `jobctl` node-side CLI (register/claim/report/gc client); builder wires image-digest pinning | second node onboarded with ≤3 commands |
 | 7.5 | GC cron + off-host backup drill; **delete legacy result-JSON path** (dashboard/app.py, orchestrator jsonl, smoke-script writers) | dashboard still green after deletion; 30-day retention verified by dry-run |
+
+---
+
+### 🗄️ Section 8: Schema Management & Migration Strategy (v1)
+
+#### 📍 Overview
+To support the transition from local JSON state files to a centralized Database-as-Broker, all schema definitions are now versioned and stored in the project for peer review. This prevents "schema drift" and ensures that every node (builder, tester, or poller) operates on the exact same data contract.
+
+#### 📂 Directory Structure
+Schema files and migration scripts follow a strict versioning convention:
+```text
+db/
+├── schema/                  # The source of truth for DB structure
+│   └── v1_fedora_packages.sql  # Initial Fedora/Koji tracking tables
+├── migrations/              # Scripts responsible for converting n-1 to n versions
+│   ├── migrate_v0_to_v1.py
+│   └── ...                 # future migration scripts
+└── README.md
+db/schema/v1_fedora_packages.sql```
+
+#### 🔀 Schema Versioning & Migration Policy
+1. **Explicit Versions**: Every database change must be associated with a version number (`v1`, `v2`). The current expected version is tracked in `db/schema/current_version.txt`.
+2. **idempotent Migrations**: A migration from `n-1` to `n` script (e.g., `migrate_v0_to_v1.py`) must be safe to run repeatedly against a fresh or partial database without throwing errors on objects that already exist.
+3. **Seed Data vs Migration**: Initial data required by the codebase (e.g., hardcoded packages from `poll_fedora_builds.py`) should be migrated via dedicated seed scripts (`00_seed_packages.sql`) rather than hardcoding them in application logic again.
+
+---
+### 🗄️ Section 8: Schema Management & Migration Strategy (v1)
+
+#### 📍 Overview
+To support the transition from local JSON state files to a centralized Database-as-Broker, all database definitions are now version-controlled and stored in `db/schema/` for peer review. This prevents "schema drift" and ensures that every node (builder, tester, or poller) operates on an identical contract.
+
+#### 📂 Directory Structure & Reviewability
+All schema artifacts and initial seed data follow a strict versioning convention (`v1`, `v2`, etc.):
+```text
+db/
+├── schema/                  # Source of truth for DB structure (reviewable here)
+│   └── v1_fedora_packages.sql  # Contains DDL logic + inline SQL COMMENTS
+├── seeds/                   # Static data used to bootstrap databases in CI/tests
+│   ├── seed_distro.csv      # Maps distros (dnf, apt) to required Docker images
+│   └── seed_packages.csv    # Initial list of tracked ROCm packages
+├── migrations/              # Scripts responsible for converting between DB versions
+│   └── migrate_v0_to_v1.py  
+```
+
+#### 🎯 Schema Review Strategy (v1)
+To maximize reviewability without cluttering machine-readable files (like CSVs), we use **`COMMENT ON`** statements in our SQL schema. 
+- **Why**: These comments are persisted in the database catalog and appear as tooltips in `psql` or database GUI tools (DBeaver, pgAdmin). 
+- **How**: Every new column definition in `v1_fedora_packages.sql` is paired with a `COMMENT ON COLUMN ... IS '...';` block.
+
+#### 🔀 n-1 to n Migration Policy
+Migrations are handled exclusively by scripts in `migrations/`. They are designed to be run against an empty database to bootstrap it, or upgraded databases, safely inserting missing tables and schema changes using `IF NOT EXISTS`.
+
+**Migration Plan (v0 --> v1)**:
+1. **Define v1 Schema**: A dedicated SQL file defining tables for packages, release targets, and state (see `db/schema/v1_fedora_packages.sql`).
+2. **Execute Migration Script**: Run `migrate_v0_to_v1.py` which:
+   - Verifies the database is `v0`.
+   - Executes the SQL DDL logic.
+   - Seeds `seed_packages.csv` and `seed_distro.csv` into the respective tables to get the system operational immediately.
+
+---

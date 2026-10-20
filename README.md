@@ -1,278 +1,86 @@
 # ROCm Distro Tester
 
-**Self-hosted continuous integration for AMD ROCm package testing across multiple Linux distributions**
+Self-hosted, always-on testing of AMD **ROCm packages across Linux distributions** on a
+local GPU lab: test images built once, GPU tests run in parallel by many machines on
+demand, and every result recorded in one durable store.
 
 ---
 
-*AI development:
+## 🤖 AI Tools & Process
 
-coding agent: pi-coding-agent
-backend: ollama
-models: Qwen3.6:35b, Qwen3.5:35b
-AMD hardware: Strix Halo, Radeon Pro W7900 *
+Everything is developed **on-premise — no external LLM services are used.**
 
----
+| | |
+|---|---|
+| **Coding agent** | `pi-coding-agent` (terminal coding agent) writes the scripts, configs, and docs |
+| **LLM backend** | Ollama running Qwen3 35B-class models (`Qwen3.6:35b`, `Qwen3.5:35b`) |
+| **Hardware** | AMD stack — Strix Halo + Radeon Pro W7900 |
 
-## Quick Start
+**The working process:** a human sets direction (plans, task briefs, acceptance
+criteria); the agent drafts and iterates on code, scripts, and documentation; every
+piece is **validated against the real environment** (live Docker, SELinux-Enforcing
+hosts, GPU nodes) before and after each change; a human reviews the diff and owns
+the commit. The repository itself is the product of that loop — the same discipline
+the repo enforces on its own CI components.
 
-### Prerequisites
-```bash
-- Controller machine with:
-  - Docker daemon installed
-  - Jenkins (with Pipeline plugin) OR simple bash scheduler
-  - Network access to target GPU test machines
-- Target machines: At least one GPU-enabled machine (AMD MI200/MI300/NVIDIA RTX)
-- Python 3.8+ for poller scripts
-- Ansible 2.9+ (for node provisioning, optional)
-```
-
-### Initial Setup
-```bash
-git clone https://github.com/your-org/rocm-distro-tester.git
-cd rocm-distro-tester
-```
-
-# Configure your test matrix via:
-ansible-playbook ansible/site.yml -e "target=distro_name -e gpu_nodes=[mi250,mi300]"  
-```
-
-### First Test Run (hipblas/smoke)
-```bash
-# Trigger poller and build/test sequence
-ci-trigger/poll-fedora-builds.py hipblas
-ci-trigger/orchestrator.sh --test-pack=hipblas --distro=all --gpu=mi250
-
-# View results
-cat ci-trigger/results/all-results.json | jq '.[]'
-```
+AI is also part of the **future test pipeline**, not just the development process:
+per-failure analysis reports (`analysis.log`) will be stored as first-class artifacts
+in the results database (see [PLAN.md](./PLAN.md) §7).
 
 ---
 
-## Architecture Overview
+## The Problem
 
-See [PLAN.md](./PLAN.md) for complete system architecture and design decisions.
+ROCm packages (hipblas, hipsolver, …) ship into **many Linux distributions**, and
+each combination must be validated on **real AMD GPU hardware** before it can ship.
 
-### Components
-- **Poller Service** (`ci-trigger/poller-*`): Monitors Fedora Koji/Ubuntu Launchpad for package updates
-- **Orchestrator** (`ci-trigger/orchestrator.sh`): Manages distributed test execution across GPU nodes
-- **Test Packets** (`pkg-tests/*`): Distro-specific test containers with unified scripts
-- **Report Generator** (`ci-trigger/results/report-generator.py`): Aggregates test outcomes
+Today that happens the manual way: hand-written Docker container tests —
+[rocm-distro-containers](https://github.com/trixirt/rocm-distro-containers),
+~1,200 Dockerfiles across 8 distributions — built and run **by hand, on the lab's
+GPU machines**. It works, but:
 
----
+- **No scheduling** — somebody has to decide what to test, start it, and chase it.
+- **Serial and ad-hoc** — the limited GPU fleet cannot be used in parallel on demand.
+- **Results are scavenged** — pass/fail lives in JSON files scattered across
+  machines; no single place answers "does this package work on this distro today?"
+- **Builds re-fetch everything** — base images come from upstream per build, so a
+  multi-hour test wave can silently drift between two different base revisions.
 
-## Project Status
+## What This Project Adds
 
-| Component | Status |
-|-----------|--------|
-| Plan & Documentation | ✅ Complete v0.1 |
-| Hipblas smoke tests (Ubuntu/Fedora) | 🟡 In Progress |
-| ROCm package matrix (89 packages) | 🔴 Not Started |
-| GPU resource queue management | 🔴 Not Started |
-| Results dashboard | 🔴 Not Started |
+This repository is the automation layer built **on top of** the existing manual
+container tests:
 
----
+| # | Component | What it changes for the lab |
+|---|---|---|
+| **1** | **A registry testers can pull from — and run tests asynchronously** | GPU machines become a self-service test pool: pull `rocm-builder:5000/<distro>-<package>` and run it. Start a wave and walk away — machines claim and execute work on their own schedule. *(local registry, test tier, :5000)* |
+| **2** | **A registry builders build into** | Build once on the builder, push, deploy to the whole fleet. The infrastructure registry also **pins the ever-changing distro bases** (`fedora:rawhide`, `ubuntu:latest`, `archlinux:latest`, `centos:stream10`) so an entire test wave builds against *one* base revision — consistent results, offline-capable, and receipts that name the exact image used. *(local registry, infra tier, :5001)* |
+| **3** | **A database as the single source of truth** | PostgreSQL holds the work queues, every pass/fail/timeout, and the build/test artifacts (logs, Dockerfiles, analyses) content-addressed by SHA-256. Baselines become first-class objects — "regressed against last month's run" is a query, not an archaeology project. The dashboard and API are read-only views of that one store. |
 
-## Quick Guide to Repository Structure
-
-**Main Project Files:**
-- `PLAN.md` - Comprehensive technical specifications and roadmap
-- `README.md` - This overview and quick start guide  
-- `HISTORY.md` - Design decisions and version history
-- `TODO.md` - Current development targets
-
-**Key Directories:**
-```
-rocm-distro-tester/
-├── ci-trigger/
-│   ├── poll_{distro}_builds.py  # Package update detection (Fedora, Ubuntu, Arch, EPEL)
-│   ├── orchestrator.sh           # Test matrix execution controller
-│   ├── tests/                    # pytest test suites for all components
-│   └── dashboard/                # Flask web interface for results
-├── pkg-tests/
-│   └── hipblas/                  # First production-ready test package
-│       ├── Dockerfile.*          # Distro-specific container builds
-│       └── smoke-tests/          # Comprehensive test scripts
-├── docker/                       # Container images (registry, dashboard)
-└── scripts/                      # Build automation utilities
-```
+In one sentence: **turn "someone manually tests ROCm on the lab GPUs" into a
+scheduled, parallel, reproducible service with an auditable record.**
 
 ---
 
-## Contributing
+## Status
 
-To extend this framework:
-1. Create a new `pkg-tests/{package}/` directory with its test artifacts
-2. Add entries to `pkg-tests/{package}/package-config.yaml`
-3. Update orchestrator dependencies if needed
-4. Open a pull request for review
+| Area | Status |
+|------|--------|
+| Design plan, runbook, verification scripts | ✅ Done |
+| Registries (test `:5000` + infra `:5001`), SELinux & non-root safe | ✅ Deployable & verified |
+| Base-image & postgres pinning (`pin_infra_images.sh`) | ✅ Working |
+| Results dashboard (file-based, interim) | ✅ Active |
+| hipblas smoke tests — Fedora/Ubuntu | 🟡 In progress |
+| Results database (PostgreSQL, v0.3) | 🟡 Deploy script ready (`setup_db.sh`) |
+| Full ROCm package matrix (~89 packages) | 🔴 Next |
 
----
+## Go Deeper
 
-## License
-
-MIT License (see LICENSE file)
-
-## Docker Registry Setup (Local Development & CI)
-
-> **Full deployment runbook (builder + state node + testers): see [INSTALL.md](./INSTALL.md).**
-
-### Quick Start
-
-**1. Deploy Registry on Builder Machine:**
-```bash
-cd rocm-distro-tester
-./ci-trigger/scripts/setup_docker_registry.sh -v
-```
-
-This will:
-- Create a local registry container (`rocm-registry`) on port 5000
-- Set up storage at `/var/lib/registry/docker-registry`
-- Validate registry health automatically
-- Show next steps for test machine configuration
-
-**2. Configure Test Machines:**  
-On each test node where images will run:  
-Copy the repo's tester sample into place (it sets `insecure-registries` for this deployment):
-```bash
-cp <rocm-distro-tester>/samples/daemon.json.tester /etc/docker/daemon.json
-# ...adjust the builder hostname/IP if yours differs, then:
-sudo systemctl restart docker
-```
-> Do not confuse the two samples: `daemon.json.tester` = `insecure-registries` (pull-side),
-> `daemon.json.builder` = `data-root` (build-side, for the builder node).
-
-**2b. Builder Node Docker Data Root:**  
-On the builder machine, before first build:
-```bash
-cp <rocm-distro-tester>/samples/daemon.json.builder /etc/docker/daemon.json
-# ...adjust 'data-root' if your build disk path differs, then:
-sudo systemctl restart docker
-```
-
-**3. Build and Push Images:**  
-On the builder machine (this is where builds happen once, deploy many times):
-
-```bash
-# Build all available test images (one-time operation)
-./scripts/build-all-images.sh --force-rebuild
-
-# Or build specific image for testing:
-./scripts/build-all-images.sh hipblas-fedora
-```
-
-**4. Pull and Run on Test Nodes:**  
-Once registry is configured, any test node can pull and execute containers:
-
-```bash
-docker pull rocm-builder:5000/hipblas-fedora:latest
-docker run --rm --device=/dev/kfd rocm-builder:5000/hipblas-fedora:latest
-```
+- **[PLAN.md](./PLAN.md)** — full architecture and design decisions (registry tiering, DB schema, retention)
+- **[INSTALL.md](./INSTALL.md)** — deployment runbook for builder / state / tester machines
+- **[TODO.md](./TODO.md)** — current task queue
+- **[rocm-distro-containers](https://github.com/trixirt/rocm-distro-containers)** — the manual test suites this project automates
 
 ---
 
-### Image Naming Convention
-
-All test images use this tagging pattern:
-- **Format**: `rocm-builder:5000/<distro>-<package>:latest`
-- **Examples**:
-  - `rocm-builder:5000/hipblas-fedora:latest`
-  - `rocm-builder:5000/hipblas-ubuntu:latest`  
-  - `rocm-builder:5000/hipblas-rhel:latest`
-
----
-
-### Registry Architecture
-
-```
-BUILDER MACHINE ───┐       ┌───────────── TEST MACHINES
-      │            │       │
-  registry:2     local   pull & run
-   (port:5000) ├──◄──────►│ docker daemon
-                    network configured for 
-                    <builder>:5000
-```
-
-**Benefits:**
-- Build once → Deploy many times across all GPU nodes
-- Zero-copy deployment (pulls cached on network)  
-- Minimal operational overhead (one process, no complex orchestration)
-- Fast subsequent pulls from local registry cache
-
----
-
-### Troubleshooting Common Issues
-
-1. **Registry won't start**
-   ```bash
-   docker logs rocm-registry     # View error output
-   sudo systemctl status docker  # Check daemon health
-   ```
-
-2. **Test machines can't reach registry**  
-   Ensure builder hostname resolves from all test nodes:
-   ```bash
-   ping <builder-hostname>       # Should resolve to local network IP
-   cat /etc/docker/daemon.json   # Verify insecure-registries setting
-   sudo systemctl restart docker  # Restart Docker on affected nodes
-   ```
-
-3. **Image build errors**  
-   Check builder machine for:
-   - Sufficient disk space (registry stores images persistently)
-   - Docker daemon connectivity to network
-   - Package dependencies for each distro in respective Dockerfiles
-
-4. **Pull fails on test node**  
-   ```bash
-   docker info | grep "Registry Mirrors"  # Verify configuration applied
-   curl http://<builder>:5000/v2/_catalog  # Manual health check from test node
-   ```
-
----
-
-### Future Enhancements
-
-v0.2 scope (deferred, based on production experience):
-- Registry backup and disaster recovery procedures
-- Automated registry health monitoring  
-- TLS encryption for registry communication
-- Multi-organization support with access control
-
-For now: Manual operational simplicity prioritizes single-developer maintenance model.
-
-See [PLAN.md](./PLAN.md#section-6-docker-registry-infrastructure-new-v015) for complete technical details and options evaluation.
-
-## 🖥️ Web Dashboard for Results Aggregation
-
-**Quick Start**: Deploy the dashboard on builder machine to view unified test results across all distros.
-
-```bash
-# Deploy dashboard container (one-time)
-./ci-trigger/scripts/setup_dashboard.sh -v
-
-# Access from any browser:
-http://localhost:5002   # On builder machine  (was 5001 — now reserved for the infra image registry, PLAN §7.5.1)
-http://<builder-hostname>:5002  # From other machines on network
-
-# API access for programmatic use:
-curl http://localhost:5002/api/summary | jq '.statistics'
-```
-
-### Dashboard Features:
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Overview Page** | Statistics, charts, recent activity | ✅ Active |
-| **Filtered Results View** | Search by distro/package/result/day window | ✅ Active |  
-| **API Endpoints** | JSON data for external integration | ✅ Active |
-| **Dockerized Deployment** | Single-container setup on builder machine | ✅ Deployed |
-| **Real-time Updates** | Dashboard reflects latest JSON results automatically | ✅ Updated |
-
-### Configuration:
-
-See [PLAN.md](./PLAN.md) for detailed setup instructions including:
-- Docker registry deployment
-- Dashboard configuration and environment variables  
-- Per-distro package dependency specifications
-
-See [PLAN.md Section 7](./PLAN.md#section-7-web-dashboard-for-test-results-new-v016) for detailed technical documentation, API reference, and upgrade considerations.
+*MIT License — see [LICENSE](./LICENSE).*

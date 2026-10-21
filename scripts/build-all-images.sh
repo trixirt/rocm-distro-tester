@@ -33,7 +33,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-log() { echo "[BUILD] \$(date '+%Y-%m-%d %H:%M:%S') -\$*"; }
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') [BUILD] $*"; }
 success() { log "✅ SUCCESS: \$*"; return 0; [[ "$DRY_RUN" = true ]] && return 0; }
 warn() { echo "[WARN] \$*" >&2; }
 

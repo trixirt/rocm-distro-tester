@@ -29,8 +29,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=true; shift;;
         --force-rebuild|-f) FORCE_REBUILD=true; shift;;
-        * 
-            DISTRO_FILTER="$1"; shift;;
+        *) DISTRO_FILTER="$1"; shift;;
     esac
 done
 

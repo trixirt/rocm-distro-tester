@@ -136,6 +136,46 @@ if command -v docker &> /dev/null; then
     
     log_info "  sudo systemctl restart docker"
 
+    # =============================================================================
+    # CHECK 1c: Insecure Regsitries Verification (Required for local registries)
+    # =============================================================================
+    
+    # Verify insecure-registries is present
+    if grep -q 'insecure-registries' "$DOCKER_DAEMON_JSON"; then
+        # Check if it trusts the alias (rocm-builder) or the expected IP
+        if grep -q 'ROCM_BUILDER_ALIAS' "$DOCKER_DAEMON_JSON" || grep -q '192.168.1.25:5001' "$DOCKER_DAEMON_JSON"; then
+            log_pass "Docker daemon.json correctly includes infra registry in insecure-registries."
+        else
+            echo -e "${RED}WARNING: 'insecure-registries' is present, but the builder IP/alias is missing.${NC}" >&2
+            echo -e "Ensure your daemon.json contains '${ROCM_BUILDER_ALIAS}:5001' or '192.168.1.25:5001'." >&2
+            log_fail "insecure-registries does not list the registry." >&2
+        fi
+    else
+        echo -e "${RED}WARNING: docker.json exists but lacks 'insecure-registries'.${NC}" >&2
+        echo -e "Without this, pulls from your local registry will fail with an HTTPS error.${NC}" >&2
+        log_fail "Add '${ROCM_BUILDER_ALIAS}:5001' to insecure-registries in ${DOCKER_DAEMON_JSON}." >&2
+    fi
+    
+    # Check Compose binary (required for setup_dashboard.sh)
+    COMPOSE_CMD=""
+    
+    if docker compose version &>/dev/null; then
+        COMPOSE_CMD="docker-compose-v2"
+    elif command -v docker-compose &>/dev/null; then
+        COMPOSE_CMD="docker-compose-v1"
+    fi
+
+    if [ -n "$COMPOSE_CMD" ]; then
+        log_pass "Docker Compose is installed: ${COMPOSE_CMD}"
+    else
+        echo "   Fix: Docker Compose V2 or V1 is required for infrastructure (dashboard/registry). Install it to manage services." >&2
+        if [ "$PKG_MANAGER" = "dnf" ]; then
+            log_info "     sudo dnf provides /usr/bin/docker-compose"
+            log_info "     # Once found: sudo dnf install <package_name>"
+        fi
+        log_fail "Docker Compose is required but not found on this system." >&2
+    fi
+
 else
     # Reuse OS-specific installation logic (abbreviated)
     echo -e "\n${RED}Docker CLI is missing. Installation recommendations:${NC}" >&2

@@ -125,7 +125,8 @@ if command -v docker &> /dev/null; then
     else
         echo "   Fix: Docker Compose is required to manage the dashboard and state services." >&2
         if [ "$PKG_MANAGER" = "dnf" ]; then
-            echo "     sudo dnf install docker-compose-v2" >&2
+            echo "     sudo dnf provides /usr/bin/docker-compose" >&2
+            echo "     # Example package: sudo dnf install docker-compose-v2" >&2
         elif [ "$PKG_MANAGER" = "apt" ]; then
             echo "     curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose" >&2
             sudo chmod +x /usr/local/bin/docker-compose 2>/dev/null || true

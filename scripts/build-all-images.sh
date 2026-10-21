@@ -43,24 +43,13 @@ warn() { echo "[WARN] \$*" >&2; }
 # =============================================================================
 
 declare -A IMAGES=(
-    # Fedora variants
-    ["hipblas-fedora"]="pkg-tests/hipblas/Dockerfile.fedora:latest"
-    ["rocblas-fedora"]="pkg-tests/rocblas/Dockerfile.fedora:latest"
-    
-    # Ubuntu variants
-    ["hipblas-ubuntu"]="pkg-tests/hipblas/Dockerfile.ubuntu:latest"
-    ["rocblas-ubuntu"]="pkg-tests/rocblas/Dockerfile.ubuntu:latest"
-    
-    # RHEL/CentOS Stream variants
-    ["hipblas-rhel"]="pkg-tests/hipblas/Dockerfile.rhel:latest"
-    ["rocblas-rhel"]="pkg-tests/rocblas/Dockerfile.rhel:latest"
+    # Fedora variants (distro/release/package/test structure)
+    ["hipblas-fedora-smoke"]="pkg-tests/fedora/rawhide/hipblas/smoke/Dockerfile:latest"
 )
 
 # Image build commands for each variant
 declare -A BUILD_COMMANDS=(
-    ["hipblas-fedora"]="docker build --file pkg-tests/hipblas/Dockerfile.fedora -t hipblas-fedora ."
-    
-    # ... (add more as implementations are created)
+    ["hipblas-fedora-smoke"]="cd $PROJECT_ROOT && docker build --file pkg-tests/fedora/rawhide/hipblas/smoke/Dockerfile -t hipblas-fedora-smoke ."
 )
 
 TAG_PREFIX="rocm-builder:5000/"
@@ -160,12 +149,12 @@ main() {
         else 
             warn "Image built: ${image_name} (tagged as ${TAG_PREFIX}${image_name})"
             
-            log "To push to registry, run: docker tag ${image_name} ${tags_prefix}${image_name}:latest && docker push ${tags_prefix}${image_name}:latest"
+            log "To push to registry, run: docker tag ${image_name} ${TAG_PREFIX}${image_name}:latest && docker push ${TAG_PREFIX}${image_name}:latest"
         fi
         
     done
     
-    log === Completed building ${count} images. ==="
+      log "=== Completed building ${count} images. ==="
     
     if [ "$REGISTRY_OK" = true ]; then
         echo "" >&2

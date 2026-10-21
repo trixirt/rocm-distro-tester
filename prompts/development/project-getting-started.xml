@@ -184,14 +184,21 @@
         <file name="verify_network_registry.sh" type="file" desc="Peer-node network reachability to the registry." />
         <file name="verify_registry_test.sh" type="file" desc="Inventory of the :5000 catalog. :5001 is deliberately outside this view." />
         <file name="verify_registry_infra.sh" type="file" desc="Inventory of the :5001 catalog." />
-        <file name="build-all-images.sh" type="file" desc="Legacy build-and-push helper. KNOWN DRAFT-GRADE: does not pass bash -n, references nonexistent pkg-tests/rocblas/, uses an undefined tags_prefix variable. Do not trust without a review pass." />
+        <file name="build-all-images.sh" type="file" desc="Legacy build-and-push helper. References pkg-tests/fedora/rawhide/hipblas/smoke/Dockerfile." />
       </files>
     </directory>
 
-    <directory name="pkg-tests" type="directory" desc="Per-package GPU test content: Dockerfiles, C++ test sources, smoke scripts, package-config.yaml. Converging on the rocm-distro-containers layout (distro/release/package/test); today a working subset.">
-      <directory name="hipblas" type="directory" desc="First and so far only package: per-distro Dockerfiles (fedora, archlinux, rhel, + template), hipblas-tests/ (compile + GTest), smoke-tests/, package-config.yaml." />
-      <directory name="ubuntu" type="directory" desc="Ubuntu family harness: Dockerfile.ubuntu, comprehensive-smoketests-ubuntu.sh, test.cpp." />
-      <directory name="rhel" type="directory" desc="RHEL/CentOS family harness: comprehensive-smoketests-rhel.sh, test_compile.sh, test.cpp." />
+    <directory name="pkg-tests" type="directory" desc="Per-package GPU test content. Now follows the rocm-distro-containers layout (distro/release/package/test).">
+      <directory name="fedora" type="directory" desc="Distro: fedora">
+        <directory name="rawhide" type="directory" desc="Release: rawhide">
+          <directory name="hipblas" type="directory" desc="Package: hipblas">
+            <directory name="smoke" type="directory" desc="Smoke test Dockerfile. Base is rocm-builder:5001/fedora-rawhide. Clone from src.fedoraproject.org, install deps (rocminfo, rocblas, hipblas), run test.sh.">
+              <file name="Dockerfile" type="file" desc="Runs dnf update, installs gcc-c++ git rocm-hip-devel rocminfo rocblas-devel rocsolver-devel hipblas-devel. Clones hipblas from src.fedoraproject.org and runs /test.sh."
+/>
+            </directory>
+          </directory>
+        </directory>
+      </directory>
     </directory>
 
     <directory name="prompts" type="directory" desc="Self-contained XML prompt corpus for pi. Invoked from the working directory that should be acted upon, i.e. pi reading the prompt file from standard input.">

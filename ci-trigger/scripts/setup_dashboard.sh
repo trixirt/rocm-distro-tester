@@ -15,7 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/../.."
-
+COMPOSE_FILE="${PROJECT_ROOT}/ci-trigger/docker/docker-compose.dashboard.yml"
 SERVICE_NAME="rocm-dashboard"
 
 DRY_RUN=false
@@ -142,12 +142,12 @@ DRYRUNOUTPUT
     # Change to project root
     cd "${PROJECT_ROOT}" || exit 1
     
-    if [ ! -f "docker-compose.dashboard.yml" ]; then
-        warn "Docker compose file not found at PROJECT_ROOT/docker-compose.dashboard.yml"
+    if [ ! -f "${COMPOSE_FILE}" ]; then
+        warn "Docker compose file not found at ${COMPOSE_FILE}"
         success "Default compose configuration applied"
     fi
     
-    docker-compose -f docker-compose.dashboard.yml up -d
+    docker-compose -f "${COMPOSE_FILE}" up -d
     
     sleep 3  # Wait for container to initialize
     
@@ -172,7 +172,7 @@ View service health logs:
 
 Manage container lifecycle:
   docker restart rocm-dashboard
-  docker-compose -f docker-compose.dashboard.yml down
+  docker-compose -f "${COMPOSE_FILE}" down
 
 =================================================================================
 NEXT STEPS FOR USERS:

@@ -74,7 +74,7 @@
 
 </project-context>
 
-<repo-layout version="2.0">
+<repo-layout version="2.1">
   <description>
     Directory map of the rocm-distro-tester repository, top level
     first, each directory listing its own contents.
@@ -100,8 +100,7 @@
         <file name="INSTALL.md" type="file" desc="Deployment runbook for the three node roles: builder, state/db, tester." />
         <file name="TODO.md" type="file" desc="Agent handoff task sheet from the v0.1.6 era. A queue of validation tasks, not a live roadmap — treat as archaeological." />
         <file name="HISTORY.md" type="file" desc="Origin story and decision log." />
-        <file name="docker-compose.registry.yml" type="file" desc="Test-tier registry on host :5000 (SELinux-relabelled bind mount under /var/lib/registry)." />
-        <file name="docker-compose.dashboard.yml" type="file" desc="Interim dashboard: container :5001, host :5002, over a results-dir bind mount." />
+        <!-- note: docker-compose.{registry,dashboard}.yml moved to ci-trigger/docker/ (commit 23fbf4aacdbc) -->
         <file name=".hunspell-whitelist" type="file" desc="Project vocabulary for spellchecking; new domain terms must go here." />
       </files>
     </directory>
@@ -146,22 +145,33 @@
         </files>
       </directory>
 
-      <directory name="dashboard" type="directory" desc="Interim Flask dashboard over *-result.json files. FROZEN by design — replaced, not extended, by the PLAN section 7 SQL-projection dashboard.">
+      <directory name="dashboard" type="directory" desc="Dashboard in STUB MODE (v0.2): the JSON-scanning logic was stripped in 720af1be ahead of the PLAN section 7 PostgreSQL backend; / and /results render waiting.html. The legacy app's bugs are historical now, not live.">
         <files>
-          <file name="app.py" type="file" desc="Flask app. Known bugs (documented in PLAN section 7.7): missing Flask request import, mangled /api/latest-results route, int() on non-numeric days filter." />
-          <file name="requirements.txt" type="file" desc="Dependencies. KNOWN BROKEN: a v0.1-era shell transcript is pasted after the dependency list — pip install -r fails; clean up before building the image." />
-          <file name="templates/base.html" type="file" desc="Bootstrap 5 shell; defines title/content blocks." />
-          <file name="templates/index.html" type="file" desc="Overview statistics page." />
-          <file name="templates/results.html" type="file" desc="Filtered results listing." />
+          <file name="app.py" type="file" desc="v0.2 stub: renders templates/waiting.html; health/API endpoints return initialization stubs. The three legacy bugs (missing request import, mangled /api/latest-results route, days-filter int()) no longer apply." />
+          <file name="requirements.txt" type="file" desc="Dependencies. STILL KNOWN BROKEN: a v0.1-era shell transcript is pasted after the two dependency lines — pip install -r fails; clean up before building the image." />
+          <file name="templates/base.html" type="file" desc="Bootstrap 5 shell (legacy views)." />
+          <file name="templates/index.html" type="file" desc="Legacy overview view — no longer referenced by the stub app." />
+          <file name="templates/results.html" type="file" desc="Legacy filtered-results view — no longer referenced by the stub app." />
+          <file name="templates/waiting.html" type="file" desc="Placeholder page the v0.2 stub renders for / and /results while awaiting the section 7 DB." />
         </files>
       </directory>
 
-      <directory name="docker" type="directory" desc="Container builds for the CI module.">
+      <directory name="docker" type="directory" desc="Container builds and compose blueprints (compose files moved here from the root as of 23fbf4aacdbc).">
         <files>
           <file name="Dockerfile.registry" type="file" desc="registry:2 wrapper used by setup_docker_registry.sh." />
           <file name="Dockerfile.dashboard" type="file" desc="python:3.11-slim + Flask + curl healthcheck; non-root appuser. The section 7.5 rocm-dashboard image will be rebuilt from here." />
+          <file name="docker-compose.registry.yml" type="file" desc="Test-tier registry on host :5000 (SELinux-relabelled bind mount under /var/lib/registry)." />
+          <file name="docker-compose.dashboard.yml" type="file" desc="Dashboard: container :5001, host :5002; setup_dashboard.sh resolves it at this path." />
         </files>
       </directory>
+    </directory>
+
+    <directory name="db" type="directory" desc="Results-database track (PLAN section 7): schema-as-SQL and the v0-to-v1 migration from poller state. Newest area of the tree — read it before touching the pollers.">
+      <files>
+        <file name="schema/v1_fedora_packages.sql" type="file" desc="Schema v1: packages, release_environments, build_states. Explicitly replaces the per-release JSON state files of poll_fedora_builds.py." />
+        <file name="migrations/migrate_v0_to_v1.py" type="file" desc="psycopg2 migration from poller-JSON state to schema v1. KNOWN BROKEN REFERENCE: it reads db/schema/current_version.txt, which does not exist in the tree — the migration fails on first run until it is created." />
+        <file name="schema/current_version.txt" type="file" desc="MISSING: referenced by migrations/migrate_v0_to_v1.py (SCHEMA_VERSION_FILE). Expected content: 1." />
+      </files>
     </directory>
 
     <directory name="scripts" type="directory" desc="Node-level preflight battery and build helpers. The verify_* scripts are the trust anchor for deployment — nothing ships without a passing one for its role.">

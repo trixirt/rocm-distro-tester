@@ -1,12 +1,11 @@
 #!/bin/bash
 # =============================================================================
-# ROCm-Distro-Tester: Dashboard Setup Script (v0.1)
+# ROCm-Distro-Tester: Dashboard Setup Script (v0.2 - Stubbed)
 # Deploys the test results dashboard on builder machine via Docker Compose
 # Optimized for single-developer maintenance with minimal operational overhead
 #
 # Requirements:
 #   - Docker installed on builder machine
-#   - Access to local directory containing result JSON files
 #
 # Usage:
 #   ./setup_dashboard.sh [--dry-run] [-v|--verbose] [--help]
@@ -17,8 +16,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/../.."
 
-RESULTS_PATH="${RESULTS_PATH:-/var/rocm-distro-tester/results}"
-CONFIG_FILE="/etc/docker/daemon.json"
 SERVICE_NAME="rocm-dashboard"
 
 DRY_RUN=false
@@ -28,52 +25,47 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=true; shift;;
         --verbose|-v) VERBOSE=true; set -x; shift;;
-        --help|-h) 
-            cat << 'HELPMESS'
+        --help|-h) show_usage; exit 0;;
+    esac
+done
+
+log() { echo "[DASHBOARD-SETUP] $(date '+%Y-%m-%d-%H:%M:%S') - $*"; }
+
+show_usage() {
+    cat << 'HELPMESS'
 
 ROCm-Distro-Tester Dashboard Setup Script
 ====================================
 
-Deploy the Web Results Dashboard on builder machine for aggregated test result viewing.
+Deploy the Web Results Dashboard on builder machine.
 
 USAGE:
-  ./setup_dashboard.sh [OPTIONS] [DIRECTORY]
+  ./setup_dashboard.sh [OPTIONS]
 
 OPTIONS:
   --dry-run           Show what would be done without making changes to system
   --verbose, -v       Verbose output with all commands being executed  
   --help, -h          Display this help message
-  
-CONFIGURATION VARIABLES:
-  RESULTS_PATH        Path to results directory mounted in container (default: /var/rocm-distro-tester/results)
-                      Ensure Docker can read/write to this path on builder machine
 
 STEPS TO SETUP:
-1. Run setup script (creates service configuration if needed)
-2. Verify docker-compose.yaml exists (will use existing or create new one)  
-3. Service starts with: docker-compose -f docker-compose.dashboard.yml up -d
-4. Access dashboard at http://localhost:5002 from any machine on network
+1. Run setup script
+2. Service starts with: docker-compose -f docker-compose.dashboard.yml up -d
+3. Access dashboard at http://localhost:5002 from any machine on network
 
 AFTER SETUP:
-- Dashboard accessible at http://<builder-hostname>:5002
-- API endpoints: /api/summary, /api/latest-results/<count>
-- View test results across all distros and packages in unified filtered interface
+- Dashboard accessible at http://<builder-hostname>:5002 (Stubbed View)
+- API endpoints: /api/summary, /api/latest-results/<count> (Stubbed Return)
 
 RECOMMENDED FOLLOWS:
 ./ci-trigger/scripts/setup_dashboard.sh -v  # Full verbosity with step-by-step output
 ./ci-trigger/scripts/setup_dashboard.sh --dry-run  # Simulate setup without running containers
 
 HELPMESS
-            exit 0;;
-        *) RESULTS_PATH="$1"; shift;;
-    esac
-done
+}
 
-log() { echo "[DASHBOARD-SETUP] \$(date '+%Y-%m-%d-%H:%M:%S') - \$*"; }
+success() { log "✅ SUCCESS: $*"; return 0; [[ "$DRY_RUN" = true ]] && return 0; }
 
-success() { log "✅ SUCCESS: \$*"; return 0; [[ "$DRY_RUN" = true ]] && return 0; }
-
-warn() { echo "[WARNING] \$*" >&2; }
+warn() { echo "[WARNING] $*" >&2; }
 
 execute() {
     local cmd="$@"
@@ -111,18 +103,6 @@ check_docker_daemon() {
     else
         warn "Docker daemon not running. Please start Docker first." >&2
         return 1
-    fi
-}
-
-check_results_directory() {
-    log "Verifying results directory: ${RESULTS_PATH}"
-    
-    if [ ! -d "$RESULTS_PATH" ]; then
-        log "Results directory does not exist, creating..."
-        execute mkdir -p "$RESULTS_PATH"
-        success "Results directory created: $RESULTS_PATH"
-    else
-        success "Results directory exists: $RESULTS_PATH"
     fi
 }
 
@@ -164,11 +144,6 @@ DRYRUNOUTPUT
     
     if [ ! -f "docker-compose.dashboard.yml" ]; then
         warn "Docker compose file not found at PROJECT_ROOT/docker-compose.dashboard.yml"
-        warn "Creating default configuration..."
-        
-        mkdir -p ci-trigger/dashboard templates
-        
-        # Default compose configuration is already in place from setup files
         success "Default compose configuration applied"
     fi
     
@@ -182,17 +157,15 @@ DRYRUNOUTPUT
         cat << 'POSTSTEP'
 
 =================================================================================
-DASHBOARD DEPLOYMENT COMPLETE!
+DASHBOARD INITIALIZED (STUB MODE) 🚀
 =================================================================================
 
-Your test results dashboard is now available at:
+Your dashboard service is online at:
 
 🌐 http://localhost:5002  OR  http://<builder-hostname>:5002
 
-Available API endpoints:
-- GET /api/summary       - Overall statistics and success rates
-- GET /api/latest/<N>    - Latest test results (raw JSON)
-- GET /results           - Filtered results view with sorting by distro/package
+⚠️ Note: Backend database (Section 7 - PostgreSQL) has not been deployed yet.
+   The UI currently displays stubbed "Hello World" data.
 
 View service health logs:
   docker logs rocm-dashboard
@@ -203,11 +176,10 @@ Manage container lifecycle:
 
 =================================================================================
 NEXT STEPS FOR USERS:
-1. Open dashboard URL in web browser from any machine on network
-2. Filter results by distro package to see consolidated test outcomes  
-3. Check API endpoints for programmatic access to result data
+1. Access Dashboard Web UI at the URL above
+2. Run setup_state_service.sh to deploy Section 7 Postgres Backend (Future Phase)
+3. Verify schema.sql and state-svc deployment in subsequent phases
 
-📊 Dashboard displays aggregated view across all ROCm-tester test scenarios!
 =================================================================================
 POSTSTEP
         
@@ -225,7 +197,6 @@ main() {
     
     if [ "$DRY_RUN" != "true" ]; then
         check_docker_daemon || exit 1
-        check_results_directory
         cleanup_existing_service
         start_dashboard_service
     else

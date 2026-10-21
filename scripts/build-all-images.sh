@@ -142,14 +142,16 @@ main() {
         local dockerfile="${IMAGES[$image_name]%:latest}"
         dockerfile="${dockerfile%%:*}"  # Get just the file path
         
-        build_image "${image_name}" "$dockerfile"
+        build_image "${image_name}" "$dockerfile"        build_image "${image_name}" "$dockerfile"
         
-        if [ "$DRY_RUN" != true ] && [ "${FORCE_REBUILD:-false}" = true ]; then
-            push_image "$image_name"
-        else 
+        if [ "$DRY_RUN" = true ]; then
             warn "Image built: ${image_name} (tagged as ${TAG_PREFIX}${image_name})"
-            
             log "To push to registry, run: docker tag ${image_name} ${TAG_PREFIX}${image_name}:latest && docker push ${TAG_PREFIX}${image_name}:latest"
+        elif [ -z "$REGISTRY_OK" ]; then
+            warn "Skipping push (registry not reachable from this build runner)"
+        else
+            log "Pushing to test registry: ${TAG_PREFIX}${image_name}:latest..."
+            push_image "${TAG_PREFIX}${image_name}:latest"
         fi
         
     done

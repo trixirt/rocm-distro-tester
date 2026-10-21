@@ -21,9 +21,11 @@ RUN useradd --create-home appuser
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-COPY ci-trigger/dashboard/ ./dashboard/
+# Since the Dockerfile and app code are now co-located in this directory,
+# we can simply copy everything currently in this folder into the container.
+COPY . ./
 
 USER appuser
 
@@ -33,4 +35,4 @@ EXPOSE 5001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:5001/api/summary || exit 1
 
-CMD ["python", "dashboard/app.py", "--port", "5001"]
+CMD ["python3", "app.py", "--port", "5001"]

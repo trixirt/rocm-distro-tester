@@ -15,7 +15,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/../.."
-COMPOSE_FILE="${PROJECT_ROOT}/ci-trigger/docker/docker-compose.dashboard.yml"
+# Updated path: dashboard files were moved alongside app code in ci-trigger/dashboard/
+COMPOSE_FILE="${PROJECT_ROOT}/ci-trigger/dashboard/docker-compose.dashboard.yml"
 SERVICE_NAME="rocm-dashboard"
 
 DRY_RUN=false
@@ -147,7 +148,7 @@ DRYRUNOUTPUT
         success "Default compose configuration applied"
     fi
     
-    docker-compose -f "${COMPOSE_FILE}" up -d
+    docker-compose -f "${COMPOSE_FILE}" up -d --build
     
     sleep 3  # Wait for container to initialize
     

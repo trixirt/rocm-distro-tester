@@ -1,10 +1,9 @@
-version: "3.8"
-
 services:
   dashboard:
     build:
+      # Context is the local directory where this compose file lives
       context: .
-      dockerfile: ci-trigger/docker/Dockerfile.dashboard
+      dockerfile: Dockerfile.dashboard
     container_name: rocm-dashboard
     restart: unless-stopped
     ports:
@@ -14,8 +13,10 @@ services:
     volumes:
       # Mount the results directory from builder machine
       - /var/rocm-distro-tester/results:/var/rocm-distro-tester/results
-      # Local directory mapping for development convenience
-      - ./ci-trigger/dashboard:/app
+      # Local directory mapping for development convenience.
+
+      # Changed from '..' to '.' to correctly map the current dashboard folder into the container.
+      - .:/app  
     environment:
       - RESULTS_DIR=/var/rocm-distro-tester/results
       - FLASK_DEBUG=1  # Useful for local dev

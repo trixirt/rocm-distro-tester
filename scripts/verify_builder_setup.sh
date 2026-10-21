@@ -107,6 +107,31 @@ if command -v docker &> /dev/null; then
                 log_pass "Docker daemon.json correctly points storage to '/rocm-builder'." 
         fi
     fi
+
+    # =============================================================================
+    # CHECK 1c: Docker Compose Installation Verification (Required for dashboard & state services)
+    # =============================================================================
+    COMPOSE_CMD=""
+    
+    # Prefer Docker Compose V2 plugin
+    if command -v docker compose &>/dev/null; then
+        COMPOSE_CMD="docker-compose"
+    elif command -v docker-compose &>/dev/null; then
+        COMPOSE_CMD="docker-compose"
+    fi
+
+    if [ -n "$COMPOSE_CMD" ]; then
+        log_pass "Docker Compose is installed: ${COMPOSE_CMD}"
+    else
+        echo "   Fix: Docker Compose is required to manage the dashboard and state services." >&2
+        if [ "$PKG_MANAGER" = "dnf" ]; then
+            echo "     sudo dnf install docker-compose-v2" >&2
+        elif [ "$PKG_MANAGER" = "apt" ]; then
+            echo "     curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose" >&2
+            sudo chmod +x /usr/local/bin/docker-compose 2>/dev/null || true
+        fi
+        log_fail "Docker Compose is required but not found on this system." >&2
+    fi
     
     log_info "  sudo systemctl restart docker"
 

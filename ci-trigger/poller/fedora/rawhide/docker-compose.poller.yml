@@ -1,0 +1,18 @@
+version: '3'
+services:
+  fedora-poller:
+    container_name: rocm-fedora-poller
+    build: .      
+    restart: unless-stopped
+    
+    volumes:
+      # Mounts the builder's Docker daemon into this container
+      - /var/run/docker.sock:/var/run/docker.sock:ro      
+      # Persists state directly on the builder disk
+      - /rocm-builder/ci-trigger/poller-state:/etc/poller-data/state
+
+    network_mode: host
+    
+    environment:
+      - FEDORA_DOCKREGISTRY=rocm-builder:5001 
+      - PYTHONUNBUFFERED=1

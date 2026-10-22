@@ -1,0 +1,9 @@
+hipblas
+rocblas
+hipsolver
+ripcsolver
+hipfft
+rocfft
+rccl
+miopen
+rocrand

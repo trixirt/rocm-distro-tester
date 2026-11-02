@@ -63,6 +63,13 @@
   </instruction>
 
   <instruction>
+    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
+    - Run `xmllint --noout <file>.xml` on every modified XML file.
+    - Use `xmllint --recover` immediately if a file fails validation to repair
+      malformed tags before committing. No parser errors are allowed!
+  </instruction>
+
+  <instruction>
     End the report with a short list of suggested next steps, ordered
     the way PLAN.md's own phased delivery sequence would suggest them.
   </instruction>

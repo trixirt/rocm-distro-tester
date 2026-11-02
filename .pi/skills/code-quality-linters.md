@@ -24,8 +24,8 @@ If I modify `Dockerfile` files, I must run them through **Hadolint**.
 2.  **No Cache**: Use `DL3042`. Always append `--no-cache-dir` to pip/rpm installs.
 
 ## 3. XML Prompt Rules (When applicable)
-All `.xml` files (especially your agent prompts) must be strictly well-formed and valid.
+All `.xml` files (especially your agent prompts) must be strictly well-formed and validated.
 
 ### 🛠️ Mandatory Checks:
-- **Linting:** Run `xmllint --noout <file>.xml`. Any parser error here is a blocker for AI ingestion!
-- **Recovery:** If a file is malformed, run `xmllint --recover` to fix it before committing.
+- **Linting:** Run `xmllint --noout <file>.xml`. Any parser error here is a blocker for downstream AI ingestion!
+- **Structure:** Ensure all tags (like `<purpose>` and `<instruction>`) are properly nested. If broken, run `xmllint --recover` to fix immediately.

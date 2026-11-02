@@ -1,4 +1,4 @@
 ./.pi/prompts/project-getting-started.xml:1: parser error : Start tag expected, '<' not found
-./.pi/prompts/project-getting-started.xml:9: parser error : Opening and ending t
+./.pi/prompts/project-getting-started.xml:1: parser error : Start tag expected, 
 ^
 <?xml version="1.0"?>

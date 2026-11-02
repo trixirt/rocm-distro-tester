@@ -30,3 +30,10 @@ All `.xml` files (especially your agent prompts) must be strictly well-formed an
 - **Linting:** Run `xmllint --noout <file>.xml`. Any parser error here is a blocker for downstream AI ingestion!
 - **Structure:** Ensure all tags (like `<purpose>` and `<instruction>`) are properly nested. If broken, run `xmllint --recover` to fix immediately.
 ## XML Rules \nAlways validate prompts with `xmllint --noout <file.xml>` before committing!
+
+## 4. HTML \u0026 Template Linting (When applicable)
+HTML templates used in the dashboard (`ci-trigger/dashboard/templates/`) should be valid HTML5 with a `<!DOCTYPE html>`.
+
+### 🛠️ Mandatory Checks:
+- **Linting:** Run `tidy -e <file.html>` on all modified standard HTML files.
+- **Templating (Jinja2):** Be aware that `<template>` variables like `{% %}` or `{{ }}` in templates (like `results.html`) will cause `tidy-html5` to report "invalid attribute" errors. These are safe within Flask environments and can be ignored, provided the *structure* (missing tags/DOCTYPE) is clean.

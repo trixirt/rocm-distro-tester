@@ -1,4 +1,3 @@
-<?xml version='1.0' encoding='utf-8'?>
 <purpose>
   You are a senior developer working on rocm-distro-tester.
   This is a fresh checkout of the repository. Analyze the project in
@@ -7,7 +6,7 @@
 
   <repo-layout> provides an overview of where to look and what each
   area is responsible for.
-</repo-layout>
+</purpose>
 
 <instructions>
   <instruction>
@@ -46,10 +45,10 @@
 
   <instruction>
     Cross-check the three pillars against their PLAN.md sections:
-    registries (Section 6) -&gt; setup_docker_registry.sh,
-    pin_infra_images.sh, docker-compose*.yml; state DB (Section 7) -&gt;
+    registries (Section 6) -> setup_docker_registry.sh,
+    pin_infra_images.sh, docker-compose*.yml; state DB (Section 7) ->
     setup_db.sh, verify_db_setup.sh, schema plans; pollers (Section 1)
-    -&gt; ci-trigger/poll_*.py. Flag any drift between plan and code.
+    -> ci-trigger/poll_*.py. Flag any drift between plan and code.
   </instruction>
 
   <instruction>
@@ -62,9 +61,7 @@
       (`DL3042`).
   </instruction>
 
-  <instruction>    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
-    - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
-    - Use `xmllint --recover` immediately if a file fails validation to repair malformed tags before committing!</instruction><instruction>
+  <instruction>
     End the report with a short list of suggested next steps, ordered
     the way PLAN.md's own phased delivery sequence would suggest them.
   </instruction>
@@ -76,11 +73,7 @@
   <instruction>
     If any aditional data is needed, request it at the end of the report.
   </instruction>
-<instruction>    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
-    - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
-    - Use `xmllint --recover` immediately if a file fails validation to repair malformed tags before committing!</instruction><instruction>    Apply strict XML validation to all `.xml` prompt files before committing. Ensure no parser errors exist:
-    - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
-    - Use `xmllint --recover` immediately if validation fails.</instruction></instructions>
+</instructions>
 
 <project-context>
 
@@ -101,7 +94,7 @@
     path is relative to the repository root. Status qualifiers
     (FROZEN, KNOWN DRAFT-GRADE, PLANNED) are load-bearing: they tell
     you where the project's trust currently stands.
-  </file>
+  </description>
 
   <base-dir-relative-to type="root">
     The repository root. Documentation is the contract; compose files
@@ -117,7 +110,7 @@
         <file name="INSTALL.md" type="file" desc="Deployment runbook for the three node roles: builder, state/db, tester." />
         <file name="TODO.md" type="file" desc="Agent handoff task sheet from the v0.1.6 era. A queue of validation tasks, not a live roadmap — treat as archaeological." />
         <file name="HISTORY.md" type="file" desc="Origin story and decision log." />
-        
+        <!-- note: docker-compose.{registry,dashboard}.yml moved to ci-trigger/docker/ (commit 23fbf4aacdbc) -->
         <file name=".hunspell-whitelist" type="file" desc="Project vocabulary for spellchecking; new domain terms must go here." />
       </files>
     </directory>
@@ -210,7 +203,8 @@
         <directory name="rawhide" type="directory" desc="Release: rawhide">
           <directory name="hipblas" type="directory" desc="Package: hipblas">
             <directory name="smoke" type="directory" desc="Smoke test Dockerfile. Base is rocm-builder:5001/fedora-rawhide. Clone from src.fedoraproject.org, install deps (rocminfo, rocblas, hipblas), run test.sh.">
-              <file name="Dockerfile" type="file" desc="Runs dnf update, installs gcc-c++ git rocm-hip-devel rocminfo rocblas-devel rocsolver-devel hipblas-devel. Clones hipblas from src.fedoraproject.org and runs /test.sh." />
+              <file name="Dockerfile" type="file" desc="Runs dnf update, installs gcc-c++ git rocm-hip-devel rocminfo rocblas-devel rocsolver-devel hipblas-devel. Clones hipblas from src.fedoraproject.org and runs /test.sh."
+/>
             </directory>
           </directory>
         </directory>
@@ -252,5 +246,4 @@
     - /rocm-builder, /rocm-db — dedicated storage roots per role
   </environment>
 
-</directory>
-</files></directory></description></repo-layout></purpose>
+</repo-layout>

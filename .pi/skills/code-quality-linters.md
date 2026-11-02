@@ -29,3 +29,4 @@ All `.xml` files (especially your agent prompts) must be strictly well-formed an
 ### 🛠️ Mandatory Checks:
 - **Linting:** Run `xmllint --noout <file>.xml`. Any parser error here is a blocker for downstream AI ingestion!
 - **Structure:** Ensure all tags (like `<purpose>` and `<instruction>`) are properly nested. If broken, run `xmllint --recover` to fix immediately.
+## XML Rules \nAlways validate prompts with `xmllint --noout <file.xml>` before committing!

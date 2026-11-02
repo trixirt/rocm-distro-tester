@@ -1,0 +1,35 @@
++ echo =========================================================================
+=========================================================================
++ echo ' ROCm Database Tutor (Tut 2): Bootstrapping & Import'
+ ROCm Database Tutor (Tut 2): Bootstrapping & Import
++ echo -------------------------------------------------------------------------
+-------------------------------------------------------------------------
++ CONTAINER_NAME=db-tutor-2
++ IMAGE_TAG=db-tutor-2
++++ dirname ./run.sh
+++ cd .
+++ pwd
++ SCRIPTS_DIR=/home/trix/test/rocm-distro-tester/tutorials/db/2
++ docker ps -a --format '{{.Names}}'
++ grep -q '^db-tutor-2$'
++ echo '[Step 1/3] Building our tutorial image (the '\''recipe'\'')...'
+[Step 1/3] Building our tutorial image (the 'recipe')...
++ docker image inspect db-tutor-2
++ echo '[Step 2/3] Starting your database office (with mounted tools)...'
+[Step 2/3] Starting your database office (with mounted tools)...
+++ pwd
++ docker run -d --name db-tutor-2 -p 5432:5432 -v /home/trix/test/rocm-distro-tester/tutorials/db/2:/mnt ' '
+docker: invalid reference format
+
+Run 'docker run --help' for more information
++ db-tutor-2 postgres
+./run.sh: line 60: db-tutor-2: command not found
++ echo ' -> Waiting for Postgres to initialize files...'
+ -> Waiting for Postgres to initialize files...
++ sleep 8
++ echo ' -> Ready! Use psql commands like:'
+ -> Ready! Use psql commands like:
++ echo '   psql -U mydbuser rocm_playground -f /mnt/schema.sql'
+   psql -U mydbuser rocm_playground -f /mnt/schema.sql
++ docker exec -it db-tutor-2 psql -U mydbuser rocm_playground
+Error response from daemon: No such container: db-tutor-2

@@ -1,0 +1,24 @@
+------------------------------------------------------
+  Docker Mount Verification (Mount/Read/Write)
+------------------------------------------------------
+[Step 1] Creating temporary host directory: /tmp/docker-mount-test-wKF6zk
+[Step 2] Spinning up Docker container 'mt_tester_1961600'...
+[Step 3] Verifying mount is successfully mounted...
+   PASSED: Directory exists inside the container.
+
+--- Mount Point Permission Diagnostics ---
+     Host side ('docker-mount-test-wKF6zk'):      drwxrwxrwx. 2 1000 1000 40 Nov  1 13:28 /tmp/docker-mount-test-wKF6zk
+     Container side ('testdata'): drwxrwxrwx    2 1000     1000            40 Nov  1 21:28 /mnt/testdata
+======================================================
+[Step 4] Verifying mount is READABLE from inside the container...
+     Host read ('host-read-test.txt'):      -rw-r--r--. 1 1000 1000 35 Nov  1 13:28 /tmp/docker-mount-test-wKF6zk/host-read-test.txt
+     Container read:        -rw-r--r--    1 1000     1000            35 Nov  1 21:28 /mnt/testdata/host-read-test.txt
+   PASSED: Host-created file is readable inside the container.
+======================================================
+[Step 5] Verifying mount is writable via 'docker exec'...
+     Container write:       -rw-r--r--    1 0        0                0 Nov  1 21:28 /mnt/testdata/container-write-test.txt
+     Host write ('container-write-test.txt'):      -rw-r--r--. 1 0 0 0 Nov  1 13:28 /tmp/docker-mount-test-wKF6zk/container-write-test.txt
+   PASSED: Container successfully wrote a file to the volume.
+
+[SUCCESS] All checks passed! (Mounted, Readable from host, Writable)
+[Cleanup]

@@ -18,11 +18,20 @@ IMAGE_TAG="db-tutor-2"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # =============================================================================
-# CLEANUP PHASE
+# CLEANUP PHASE (Targeted Cleanup)
 # =============================================================================
+echo "[Step 1/3] Cleaning up environment for this tutorial only..."
+
+# We intentionally only clean up the resources *this specific* script owns.
+# This prevents us from accidentally killing simulations running in Tutorial 1 or 3.
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "[Cleanup] Removing previous session..."
+    echo "[Cleanup] Removing previous ${CONTAINER_NAME} session..."
     docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 
+fi
+
+# Optional: Clean up the specific build image for this tutorial to save space.
+if docker images --format '{{.Repository}}' | grep -q "^${IMAGE_TAG}$"; then
+    docker rmi "${IMAGE_TAG}" >/dev/null 2>&1 || true
 fi
 
 # =============================================================================
@@ -51,11 +60,13 @@ echo "[Step 2/3] Starting your database office (with mounted tools)..."
 # default port assigned to the PostgreSQL database system. By mapping it, any program on your host 
 # can access the database simply by connecting to localhost:5432.
 
-# '-v "${HERE}":/mnt' (Volume Mounting): Connects the local folder containing your SQL scripts into the container.
-# Using '${HERE}' ensures we mount files relative to the script's actual location, not your terminal's working directory.
+# '-v "${HERE}/db-server":/mnt/db-server:Z' (Volume Mounting): Connects the local folder containing 
+# our SQL schema and seed data into the container.
+# ':Z' is added to handle SELinux contexts on Fedora/RHEL where mounted files are often read-only by default.
 
 docker run -d --name ${CONTAINER_NAME} \
        -p 5432:5432                    \
+       -v "${HERE}/db-server":/mnt/db-server:Z \ 
        ${IMAGE_TAG} postgres 
 
 # If there is a problem.. 
@@ -70,6 +81,6 @@ sleep 8
 # STEP 3: CONNECT PHASE (Opening the Door)
 # =============================================================================
 echo " -> Ready! Use psql commands like:"
-echo "   psql -U mydbuser rocm_playground -f /mnt/schema.sql"
+echo "   psql -U mydbuser rocm_production_sim -f /mnt/schema.sql"
 
-docker exec -it "${CONTAINER_NAME}" psql -U mydbuser rocm_playground
+docker exec -it "${CONTAINER_NAME}" psql -U mydbuser rocm_production_sim

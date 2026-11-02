@@ -12,18 +12,20 @@ echo "-------------------------------------------------------------------------"
 CONTAINER_NAME="db-tutor-db"
 
 # ----------------------------
-# PRE-CHECK: Remove any leftover containers
+# MASTER CLEANUP (Universal Sweep)
 # ----------------------------
-# We do this because in a tutorial, we want a fresh start every single time.
-if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "[Cleanup] Removing previous database session..."
-    docker rm -f ${CONTAINER_NAME} >/dev/null 2>&1
-fi
+echo "[Step 1/3] Cleaning up environment and ensuring a fresh start..."
+
+# We now perform a 'Master Sweep' to ensure that running this script leaves a 
+# completely clean slate, regardless of whether Tutorials 2 or 3 were run prior.
+docker rm -f db-tutor-db db-tutor-2 db-server rocm-poller >/dev/null 2>&1 || true
+docker network rm rocm-net >/dev/null 2>&1 || true
+docker rmi db-tutor db-tutor-2 >/dev/null 2>&1 || true
 
 # ----------------------------
 # STEP 1: THE BUILD (Baking the Cake)
 # ----------------------------
-echo "[Step 1/2] Building our tutorial image..."
+echo "[Step 2/3] Building our tutorial image..."
 if ! docker image inspect db-tutor >/dev/null 2>&1; then
     docker build -t db-tutor .
 fi
@@ -31,7 +33,7 @@ fi
 # ----------------------------
 # STEP 2: THE RUN (Eating the Cake)
 # ----------------------------
-echo "[Step 2/2] Starting your database office..."
+echo "[Step 3/3] Starting your database office..."
 
 # 'docker run' starts a new container. 
 # '-d' = Detached (runs in background). 

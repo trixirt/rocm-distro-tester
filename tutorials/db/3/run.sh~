@@ -1,0 +1,109 @@
+#!/bin/bash
+set -e
+
+echo "========================================================================="
+echo " ROCm Database Simulator: Network & Polling (SECTION 7)"
+echo "-------------------------------------------------------------------------"
+
+# This pattern determines the script's own directory based on its location ('$0'),
+# regardless of where the user invokes it from.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+DB_CONTAINER="db-server"   # The hostname our poller will use to find the database via DNS.
+DB_NET="rocm-net"          # A private "virtual switch" connecting our simulated lab nodes.
+POL_CONTAINER="rocm-poller"
+
+# =============================================================================
+# CLEANUP PHASE
+# =============================================================================
+echo "[Step 1/4] Cleaning up environment..."
+
+# Remove any leftover networks or containers from previous simulation attempts.
+docker network rm ${DB_NET} > /dev/null 2>&1 || true
+docker rm -f ${DB_CONTAINER} ${POL_CONTAINER} > /dev/null 2>&1 || true
+
+# =============================================================================
+# NETWORK PHASE: The "Private Switch"
+# =============================================================================
+echo "[Step 1/4] Creating the lab network. This is the bridge that connects our DB and Poller..."
+
+docker network create ${DB_NET}
+
+# -----------------------------------------------------------------------------
+# COMMAND: docker run
+# DESCRIPTION: This command tells Docker to fetch the postgres:16 image and 
+#              spin up a container from it. Every flag here configures the environment.
+# KEY PARAMETERS EXPLAINED FOR `docker run`:
+#   -d                  : (Detached) Run this as a background service so we can keep using our terminal.
+#   --name              : Assigns the alias "db-server" so other containers can find it via DNS.
+#   --network           : Plugs this container into our private bridge created in Step 1.
+#   -p                  : (Port mapping) Exposes port 5432 inside the box to your main computer.
+#   -e POSTGRES_DB      : Tells Postgres which database folder/file to create automatically on first boot.
+#   -e POSTGRES_USER    : Tells Postgres which user account to create automatically.
+#   -e HOST_AUTH_METHOD : Disables password checking (trust) for easy local tutorialing.
+# -----------------------------------------------------------------------------
+
+docker run -d --name ${DB_CONTAINER} \
+    --network ${DB_NET} \
+    -p 5432:5432 \
+    -e POSTGRES_DB=rocm_production_sim \
+    -e POSTGRES_USER=mydbuser \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    postgres:16
+
+# Wait for Postgres to be ready (health check) because 'docker run' returns instantly, 
+# but the database process needs time to load its internal files.
+for i in {1..10}; do
+    if docker exec ${DB_CONTAINER} pg_isready; then break; fi
+    sleep 1
+done
+echo " -> `db-server` is Ready!"
+
+# =============================================================================
+# STEP 3: Bootstrap Schema & Data (The Filing Cabinet)
+# =============================================================================
+echo "[Step 3/4] Bootstrapping Table Structure and Seed Data via 'mounts'..."
+
+# -----------------------------------------------------------------------------
+# COMMAND: docker exec
+# DESCRIPTION: This "SSH-like" command drops you into a *running* container 
+#              to execute a tool as if you were sitting at that machine.
+# KEY PARAMETERS EXPLAINED FOR `docker exec`:
+#       ${DB_CONTAINER} : The name of the running server we are "logging into".
+#         psql -U mydbuser rocm_production_sim  : The Postgres client tool configured with our user/database name.
+#             -f /mnt/db-server/schema.sql : Execute the SQL file located at this path and run those commands.
+#              TRUNCATE packages; : Clears out the table (but not its structure) before adding new data so we don't get duplicates.
+#    COPY ... FROM ... WITH (FORMAT csv, HEADER); : The Postgres command to fast-load spreadsheet data into a table.
+# -----------------------------------------------------------------------------
+
+docker exec ${DB_CONTAINER} psql -U mydbuser rocm_production_sim -f /mnt/db-server/schema.sql
+docker exec ${DB_CONTAINER} psql -U mydbuser rocm_production_sim -c "TRUNCATE packages;"
+docker exec ${DB_CONTAINER} psql -U mydbuser rocm_production_sim -c "COPY packages FROM '/mnt/db-server/seed.csv' WITH (FORMAT csv, HEADER);"
+
+echo " -> DB Structure: 2 Distro Environments | Packages Loaded"
+
+# =============================================================================
+# STEP 4: Start Poller (The Worker Node)
+# =============================================================================
+echo "[Step 4/4] Starting `rocm-poller`... This is a remote GPU tester in our lab..."
+
+# -----------------------------------------------------------------------------
+# COMMAND: docker run
+# DESCRIPTION: Spins up the poller worker that will query the brokered database.
+# KEY PARAMETERS EXPLAINED FOR `docker run`:
+#             --network : Connects the worker to our private switch so it can find the brokered DB ("db-server").
+#             -v ...    : Mounts our local `./poller` folder into /mnt inside this container.
+#                            This allows the Python script to use 'psycopg2' (the database driver) locally!
+# -----------------------------------------------------------------------------
+
+docker run --name ${POL_CONTAINER} \
+    --network ${DB_NET} \
+    -v "${HERE}/poller":/mnt \
+    python:3.9-slim \
+    bash -c "pip install psycopg2-binary > /dev/null && python /mnt/poll.py"
+
+# Success Message
+echo ""
+echo "========================================================================="
+echo " SIMULATION COMPLETE: Run './run.sh' again to see the updated status!"
+echo "========================================================================="

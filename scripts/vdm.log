@@ -1,0 +1,11 @@
+------------------------------------------------------
+  Docker Bind Mount Read/Write Test
+------------------------------------------------------
+[Step 1] Creating temporary host directory: /tmp/docker-mount-test-4D9E2U
+[Step 2] Spinning up Docker container 'mt_tester_1779996'...
+
+[Step 3] Verifying mount is successfully mounted...
+   PASSED: Directory exists inside the container.
+[Step 4] Verifying mount is READABLE from inside the container...
+cat: can't open '/mnt/testdata/host-read-test.txt': Permission denied
+[Cleanup]

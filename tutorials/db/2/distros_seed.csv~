@@ -1,0 +1,7 @@
+name,flavor,tag,state
+fedora,dnf,rawhide,rtesting
+fedora,dnf,f45,stable
+ubuntu,apt,noble,stable
+archlinux,pacman,,rolling
+rhel,dnf,stream10,stable
+popos,apt,oracular,stable

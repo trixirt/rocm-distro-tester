@@ -1,0 +1,27 @@
+-- =============================================================================
+-- BOOTSTRAP SCRIPT: v1 Schema (Reference from db/schema/v1_fedora_packages.sql)
+-- Purpose: Creates the core tables we expect to use in production.
+-- =============================================================================
+
+-- Drop existing tables if they exist (make this file idempotent)
+DROP TABLE IF EXISTS packages;
+DROP TABLE IF EXISTS distros;
+
+-- -----------------------
+-- 1. The Distro Environment Table
+-- -----------------------
+CREATE TABLE distros (
+    id          int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        text NOT NULL UNIQUE,     -- e.g., 'fedora'
+    flavor      text NOT NULL,            -- e.g., 'dnf', 'apt', 'pacman'
+    tag         text NOT NULL,            -- e.g., 'rawhide', 'noble'
+    state       text DEFAULT 'stable' CHECK (state IN ('stable','beta','rolling'))
+);
+
+-- -----------------------
+-- 2. The Packages Table
+-- -----------------------
+CREATE TABLE packages (
+    id           int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    package_name text NOT NULL UNIQUE     
+);

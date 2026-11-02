@@ -1,0 +1,20 @@
+------------------------------------------------------
+  Docker Mount Verification (Mount/Read/Write)
+------------------------------------------------------
+[Step 1] Creating temporary host directory: /tmp/docker-mount-test-1KxTEm
+[Step 2] Spinning up Docker container 'mt_tester_1800515'...
+[Step 3] Verifying mount is successfully mounted...
+   PASSED: Directory exists inside the container.
+
+--- Permission Diagnostics ---
+     Host side ('docker-mount-test-1KxTEm'):      drwx------. 2 1000 1000 40 Nov  1 07:24 /tmp/docker-mount-test-1KxTEm
+     Container side ('testdata'): drwx------    2 1000     1000            40 Nov  1 15:24 /mnt/testdata
+======================================================
+[Step 4] Verifying mount is READABLE from inside the container...
+   PASSED: Host-created file is readable inside the container.
+======================================================
+[Step 5] Verifying mount is writable via 'docker exec'...
+   PASSED: Container successfully wrote a file to the volume.
+
+[SUCCESS] All checks passed! (Mounted, Readable from host, Writable)
+[Cleanup]

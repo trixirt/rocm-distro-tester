@@ -1,4 +1,4 @@
-<?xml version="1.0"?>
+<?xml version='1.0' encoding='utf-8'?>
 <purpose>
   You are a senior developer working on rocm-distro-tester.
   This is a fresh checkout of the repository. Analyze the project in
@@ -16,7 +16,7 @@
 
   <instruction>
     Read the docs in intent order: README.md (what this is), PLAN.md
-    (how it is designed &#x2014; note which Section each script implements),
+    (how it is designed — note which Section each script implements),
     INSTALL.md (target deployment), TODO.md (the handoff task sheet),
     HISTORY.md (why it exists).
   </instruction>
@@ -62,14 +62,9 @@
       (`DL3042`).
   </instruction>
 
-  <instruction>
-    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
-    - Run `xmllint --noout <file>.xml` on every modified XML file.
-    - Use `xmllint --recover` immediately if a file fails validation to repair
-      malformed tags before committing. No parser errors are allowed!
-  </instruction>
-
-  <instruction>
+  <instruction>    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
+    - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
+    - Use `xmllint --recover` immediately if a file fails validation to repair malformed tags before committing!</instruction><instruction>
     End the report with a short list of suggested next steps, ordered
     the way PLAN.md's own phased delivery sequence would suggest them.
   </instruction>
@@ -81,7 +76,9 @@
   <instruction>
     If any aditional data is needed, request it at the end of the report.
   </instruction>
-</instructions>
+<instruction>    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
+    - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
+    - Use `xmllint --recover` immediately if a file fails validation to repair malformed tags before committing!</instruction></instructions>
 
 <project-context>
 
@@ -113,96 +110,96 @@
   <structure>
     <directory name="." type="root" desc="Repository root: the documentation contract, service compose files, and per-role daemon config samples.">
       <files>
-        <file name="README.md" type="file" desc="High-level overview for non-technical readers. Its status table (green/amber/red markers) is the best first summary of what works today &#x2014; start here."/>
-        <file name="PLAN.md" type="file" desc="The contract. Section 6 = registry tiering and naming; Section 7 = state DB, runner protocol, schema, retention, dashboard-as-SQL. Code that contradicts this file is in error, not the other way around."/>
-        <file name="INSTALL.md" type="file" desc="Deployment runbook for the three node roles: builder, state/db, tester."/>
-        <file name="TODO.md" type="file" desc="Agent handoff task sheet from the v0.1.6 era. A queue of validation tasks, not a live roadmap &#x2014; treat as archaeological."/>
-        <file name="HISTORY.md" type="file" desc="Origin story and decision log."/>
-        <!-- note: docker-compose.{registry,dashboard}.yml moved to ci-trigger/docker/ (commit 23fbf4aacdbc) -->
-        <file name=".hunspell-whitelist" type="file" desc="Project vocabulary for spellchecking; new domain terms must go here."/>
+        <file name="README.md" type="file" desc="High-level overview for non-technical readers. Its status table (green/amber/red markers) is the best first summary of what works today — start here." />
+        <file name="PLAN.md" type="file" desc="The contract. Section 6 = registry tiering and naming; Section 7 = state DB, runner protocol, schema, retention, dashboard-as-SQL. Code that contradicts this file is in error, not the other way around." />
+        <file name="INSTALL.md" type="file" desc="Deployment runbook for the three node roles: builder, state/db, tester." />
+        <file name="TODO.md" type="file" desc="Agent handoff task sheet from the v0.1.6 era. A queue of validation tasks, not a live roadmap — treat as archaeological." />
+        <file name="HISTORY.md" type="file" desc="Origin story and decision log." />
+        
+        <file name=".hunspell-whitelist" type="file" desc="Project vocabulary for spellchecking; new domain terms must go here." />
       </files>
     </directory>
 
     <directory name="samples" type="directory" desc="Per-role Docker daemon.json templates. The insecure-registries list per role IS policy: a tester may name :5000, never :5001.">
       <files>
-        <file name="daemon.json.builder" type="file" desc="Builder role: trusts rocm-builder:5000."/>
-        <file name="daemon.json.db" type="file" desc="State/db role: trusts rocm-builder:5001 (merge into the builder file if the node is co-hosted)."/>
-        <file name="daemon.json.tester" type="file" desc="Tester role: trusts rocm-builder:5000 only. :5001 appearing here is a policy violation."/>
+        <file name="daemon.json.builder" type="file" desc="Builder role: trusts rocm-builder:5000." />
+        <file name="daemon.json.db" type="file" desc="State/db role: trusts rocm-builder:5001 (merge into the builder file if the node is co-hosted)." />
+        <file name="daemon.json.tester" type="file" desc="Tester role: trusts rocm-builder:5000 only. :5001 appearing here is a policy violation." />
       </files>
     </directory>
 
     <directory name="ci-trigger" type="directory" desc="The CI module: distro build pollers, the interim dashboard, and the registry/state-DB setup and pinning scripts. The most recently active area of the project.">
       <files>
-        <file name="poll_fedora_builds.py" type="file" desc="Fedora poller: dnf info inside fedora:rawhide/f45/f44/f43 containers; per-release state files under results/."/>
-        <file name="poll_ubuntu_builds.py" type="file" desc="Ubuntu poller: apt inside ubuntu:latest/noble/jammy/focal containers."/>
-        <file name="poll_archlinux_builds.py" type="file" desc="Arch poller: pacman -Si inside archlinux:latest."/>
-        <file name="poll_epel_builds.py" type="file" desc="RHEL/CentOS poller: dnf repoquery inside quay.io/centos/centos:stream10/9 with EPEL enabled."/>
-        <file name="orchestrator.sh" type="file" desc="Early matrix runner (local build-and-run). Draft-grade placeholder &#x2014; will be replaced by the PLAN section 7 queue/claim path."/>
+        <file name="poll_fedora_builds.py" type="file" desc="Fedora poller: dnf info inside fedora:rawhide/f45/f44/f43 containers; per-release state files under results/." />
+        <file name="poll_ubuntu_builds.py" type="file" desc="Ubuntu poller: apt inside ubuntu:latest/noble/jammy/focal containers." />
+        <file name="poll_archlinux_builds.py" type="file" desc="Arch poller: pacman -Si inside archlinux:latest." />
+        <file name="poll_epel_builds.py" type="file" desc="RHEL/CentOS poller: dnf repoquery inside quay.io/centos/centos:stream10/9 with EPEL enabled." />
+        <file name="orchestrator.sh" type="file" desc="Early matrix runner (local build-and-run). Draft-grade placeholder — will be replaced by the PLAN section 7 queue/claim path." />
       </files>
 
-      <directory name="results" type="directory" desc="Runtime scratch: per-release build-state JSON written by the pollers. .gitignore excludes logs and .jsonl under it; never treat these paths as references."/>
+      <directory name="results" type="directory" desc="Runtime scratch: per-release build-state JSON written by the pollers. .gitignore excludes logs and .jsonl under it; never treat these paths as references." />
 
-      <directory name="scripts" type="directory" desc="Deployment scripts &#x2014; the heart of the project.">
+      <directory name="scripts" type="directory" desc="Deployment scripts — the heart of the project.">
         <files>
-          <file name="setup_docker_registry.sh" type="file" desc="Deploys both registry tiers (--tier test|infra) with SELinux-safe bind mounts and the non-root storage model."/>
-          <file name="pin_infra_images.sh" type="file" desc="Pushes infra + rolling distro base images to :5001 with a sha256-12hex twin per pin. Re-run at wave start, never mid-wave."/>
-          <file name="setup_db.sh" type="file" desc="Boots postgres:16 from the infra registry onto /rocm-db/pg (host :5432, container uid 999). Subcommands: --status, --drop, --reinit."/>
-          <file name="setup_dashboard.sh" type="file" desc="Interim dashboard deploy helper."/>
+          <file name="setup_docker_registry.sh" type="file" desc="Deploys both registry tiers (--tier test|infra) with SELinux-safe bind mounts and the non-root storage model." />
+          <file name="pin_infra_images.sh" type="file" desc="Pushes infra + rolling distro base images to :5001 with a sha256-12hex twin per pin. Re-run at wave start, never mid-wave." />
+          <file name="setup_db.sh" type="file" desc="Boots postgres:16 from the infra registry onto /rocm-db/pg (host :5432, container uid 999). Subcommands: --status, --drop, --reinit." />
+          <file name="setup_dashboard.sh" type="file" desc="Interim dashboard deploy helper." />
         </files>
       </directory>
 
       <directory name="tests" type="directory" desc="pytest suites for the pollers and the dashboard; conftest.py injects the path and holds shared fixtures.">
         <files>
-          <file name="conftest.py" type="file" desc="Fixtures for mocked distro responses and temp state files; sys.path injection for ci-trigger/."/>
-          <file name="test_poll_fedora_builds.py" type="file" desc="Fedora poller tests."/>
-          <file name="test_poll_ubuntu_builds.py" type="file" desc="Ubuntu poller tests."/>
-          <file name="test_poll_archlinux_builds.py" type="file" desc="Arch poller tests."/>
-          <file name="test_poll_epel_builds.py" type="file" desc="EPEL/RHEL poller tests."/>
-          <file name="test_dashboard.py" type="file" desc="Dashboard tests &#x2014; import fails without Flask installed; that is environmental, not a regression."/>
-          <file name="README.txt" type="file" desc="How to run the suites."/>
+          <file name="conftest.py" type="file" desc="Fixtures for mocked distro responses and temp state files; sys.path injection for ci-trigger/." />
+          <file name="test_poll_fedora_builds.py" type="file" desc="Fedora poller tests." />
+          <file name="test_poll_ubuntu_builds.py" type="file" desc="Ubuntu poller tests." />
+          <file name="test_poll_archlinux_builds.py" type="file" desc="Arch poller tests." />
+          <file name="test_poll_epel_builds.py" type="file" desc="EPEL/RHEL poller tests." />
+          <file name="test_dashboard.py" type="file" desc="Dashboard tests — import fails without Flask installed; that is environmental, not a regression." />
+          <file name="README.txt" type="file" desc="How to run the suites." />
         </files>
       </directory>
 
       <directory name="dashboard" type="directory" desc="Dashboard in STUB MODE (v0.2): the JSON-scanning logic was stripped in 720af1be ahead of the PLAN section 7 PostgreSQL backend; / and /results render waiting.html. The legacy app's bugs are historical now, not live.">
         <files>
-          <file name="app.py" type="file" desc="v0.2 stub: renders templates/waiting.html; health/API endpoints return initialization stubs. The three legacy bugs (missing request import, mangled /api/latest-results route, days-filter int()) no longer apply."/>
-          <file name="requirements.txt" type="file" desc="Dependencies. STILL KNOWN BROKEN: a v0.1-era shell transcript is pasted after the two dependency lines &#x2014; pip install -r fails; clean up before building the image."/>
-          <file name="templates/base.html" type="file" desc="Bootstrap 5 shell (legacy views)."/>
-          <file name="templates/index.html" type="file" desc="Legacy overview view &#x2014; no longer referenced by the stub app."/>
-          <file name="templates/results.html" type="file" desc="Legacy filtered-results view &#x2014; no longer referenced by the stub app."/>
-          <file name="templates/waiting.html" type="file" desc="Placeholder page the v0.2 stub renders for / and /results while awaiting the section 7 DB."/>
+          <file name="app.py" type="file" desc="v0.2 stub: renders templates/waiting.html; health/API endpoints return initialization stubs. The three legacy bugs (missing request import, mangled /api/latest-results route, days-filter int()) no longer apply." />
+          <file name="requirements.txt" type="file" desc="Dependencies. STILL KNOWN BROKEN: a v0.1-era shell transcript is pasted after the two dependency lines — pip install -r fails; clean up before building the image." />
+          <file name="templates/base.html" type="file" desc="Bootstrap 5 shell (legacy views)." />
+          <file name="templates/index.html" type="file" desc="Legacy overview view — no longer referenced by the stub app." />
+          <file name="templates/results.html" type="file" desc="Legacy filtered-results view — no longer referenced by the stub app." />
+          <file name="templates/waiting.html" type="file" desc="Placeholder page the v0.2 stub renders for / and /results while awaiting the section 7 DB." />
         </files>
       </directory>
 
       <directory name="docker" type="directory" desc="Container builds and compose blueprints (compose files moved here from the root as of 23fbf4aacdbc).">
         <files>
-          <file name="Dockerfile.registry" type="file" desc="registry:2 wrapper used by setup_docker_registry.sh."/>
-          <file name="Dockerfile.dashboard" type="file" desc="python:3.11-slim + Flask + curl healthcheck; non-root appuser. The section 7.5 rocm-dashboard image will be rebuilt from here."/>
-          <file name="docker-compose.registry.yml" type="file" desc="Test-tier registry on host :5000 (SELinux-relabelled bind mount under /var/lib/registry)."/>
-          <file name="docker-compose.dashboard.yml" type="file" desc="Dashboard: container :5001, host :5002; setup_dashboard.sh resolves it at this path."/>
+          <file name="Dockerfile.registry" type="file" desc="registry:2 wrapper used by setup_docker_registry.sh." />
+          <file name="Dockerfile.dashboard" type="file" desc="python:3.11-slim + Flask + curl healthcheck; non-root appuser. The section 7.5 rocm-dashboard image will be rebuilt from here." />
+          <file name="docker-compose.registry.yml" type="file" desc="Test-tier registry on host :5000 (SELinux-relabelled bind mount under /var/lib/registry)." />
+          <file name="docker-compose.dashboard.yml" type="file" desc="Dashboard: container :5001, host :5002; setup_dashboard.sh resolves it at this path." />
         </files>
       </directory>
     </directory>
 
-    <directory name="db" type="directory" desc="Results-database track (PLAN section 7): schema-as-SQL and the v0-to-v1 migration from poller state. Newest area of the tree &#x2014; read it before touching the pollers.">
+    <directory name="db" type="directory" desc="Results-database track (PLAN section 7): schema-as-SQL and the v0-to-v1 migration from poller state. Newest area of the tree — read it before touching the pollers.">
       <files>
-        <file name="schema/v1_fedora_packages.sql" type="file" desc="Schema v1: packages, release_environments, build_states. Explicitly replaces the per-release JSON state files of poll_fedora_builds.py."/>
-        <file name="migrations/migrate_v0_to_v1.py" type="file" desc="psycopg2 migration from poller-JSON state to schema v1. KNOWN BROKEN REFERENCE: it reads db/schema/current_version.txt, which does not exist in the tree &#x2014; the migration fails on first run until it is created."/>
-        <file name="schema/current_version.txt" type="file" desc="MISSING: referenced by migrations/migrate_v0_to_v1.py (SCHEMA_VERSION_FILE). Expected content: 1."/>
+        <file name="schema/v1_fedora_packages.sql" type="file" desc="Schema v1: packages, release_environments, build_states. Explicitly replaces the per-release JSON state files of poll_fedora_builds.py." />
+        <file name="migrations/migrate_v0_to_v1.py" type="file" desc="psycopg2 migration from poller-JSON state to schema v1. KNOWN BROKEN REFERENCE: it reads db/schema/current_version.txt, which does not exist in the tree — the migration fails on first run until it is created." />
+        <file name="schema/current_version.txt" type="file" desc="MISSING: referenced by migrations/migrate_v0_to_v1.py (SCHEMA_VERSION_FILE). Expected content: 1." />
       </files>
     </directory>
 
-    <directory name="scripts" type="directory" desc="Node-level preflight battery and build helpers. The verify_* scripts are the trust anchor for deployment &#x2014; nothing ships without a passing one for its role.">
+    <directory name="scripts" type="directory" desc="Node-level preflight battery and build helpers. The verify_* scripts are the trust anchor for deployment — nothing ships without a passing one for its role.">
       <files>
-        <file name="verify_all_tests.sh" type="file" desc="Runs the entire battery."/>
-        <file name="verify_builder_setup.sh" type="file" desc="Builder node: registry alias resolution, /rocm-builder data-root, 500GB, permissions."/>
-        <file name="verify_db_setup.sh" type="file" desc="State/db node: /rocm-db mount, daemon.json :5001 trust, offline boot readiness."/>
-        <file name="verify_state_setup.sh" type="file" desc="From a tester: reach state:8443, present token, canary job write+delete."/>
-        <file name="verify_tester_setup.sh" type="file" desc="Tester node: :5000 trust, pull-and-run readiness."/>
-        <file name="verify_network_registry.sh" type="file" desc="Peer-node network reachability to the registry."/>
-        <file name="verify_registry_test.sh" type="file" desc="Inventory of the :5000 catalog. :5001 is deliberately outside this view."/>
-        <file name="verify_registry_infra.sh" type="file" desc="Inventory of the :5001 catalog."/>
-        <file name="build-all-images.sh" type="file" desc="Legacy build-and-push helper. References pkg-tests/fedora/rawhide/hipblas/smoke/Dockerfile."/>
+        <file name="verify_all_tests.sh" type="file" desc="Runs the entire battery." />
+        <file name="verify_builder_setup.sh" type="file" desc="Builder node: registry alias resolution, /rocm-builder data-root, 500GB, permissions." />
+        <file name="verify_db_setup.sh" type="file" desc="State/db node: /rocm-db mount, daemon.json :5001 trust, offline boot readiness." />
+        <file name="verify_state_setup.sh" type="file" desc="From a tester: reach state:8443, present token, canary job write+delete." />
+        <file name="verify_tester_setup.sh" type="file" desc="Tester node: :5000 trust, pull-and-run readiness." />
+        <file name="verify_network_registry.sh" type="file" desc="Peer-node network reachability to the registry." />
+        <file name="verify_registry_test.sh" type="file" desc="Inventory of the :5000 catalog. :5001 is deliberately outside this view." />
+        <file name="verify_registry_infra.sh" type="file" desc="Inventory of the :5001 catalog." />
+        <file name="build-all-images.sh" type="file" desc="Legacy build-and-push helper. References pkg-tests/fedora/rawhide/hipblas/smoke/Dockerfile." />
       </files>
     </directory>
 
@@ -211,7 +208,7 @@
         <directory name="rawhide" type="directory" desc="Release: rawhide">
           <directory name="hipblas" type="directory" desc="Package: hipblas">
             <directory name="smoke" type="directory" desc="Smoke test Dockerfile. Base is rocm-builder:5001/fedora-rawhide. Clone from src.fedoraproject.org, install deps (rocminfo, rocblas, hipblas), run test.sh.">
-              <file name="Dockerfile" type="file" desc="Runs dnf update, installs gcc-c++ git rocm-hip-devel rocminfo rocblas-devel rocsolver-devel hipblas-devel. Clones hipblas from src.fedoraproject.org and runs /test.sh."/>
+              <file name="Dockerfile" type="file" desc="Runs dnf update, installs gcc-c++ git rocm-hip-devel rocminfo rocblas-devel rocsolver-devel hipblas-devel. Clones hipblas from src.fedoraproject.org and runs /test.sh." />
             </directory>
           </directory>
         </directory>
@@ -220,23 +217,23 @@
 
     <directory name="prompts" type="directory" desc="Self-contained XML prompt corpus for pi. Invoked from the working directory that should be acted upon, i.e. pi reading the prompt file from standard input.">
       <files>
-        <file name="README.txt" type="file" desc="Category map (development/ live, test/ planned)."/>
+        <file name="README.txt" type="file" desc="Category map (development/ live, test/ planned)." />
       </files>
       <directory name="development" type="directory" desc="Prompts that develop THIS project; this file lives here.">
         <files>
-          <file name="README.txt" type="file" desc="Usage, prompt inventory, and the three-prompt workflow loop (getting-started, then design-review, implement, then verify-change)."/>
-          <file name="project-getting-started.xml" type="file" desc="Fresh-checkout analysis &#x2014; the entry point of every session in a new clone (this file)."/>
-          <file name="design-review.xml" type="file" desc="Proposal gate against the project invariants, before coding."/>
-          <file name="verify-change.xml" type="file" desc="Post-change verification gate + residual-risk report."/>
+          <file name="README.txt" type="file" desc="Usage, prompt inventory, and the three-prompt workflow loop (getting-started, then design-review, implement, then verify-change)." />
+          <file name="project-getting-started.xml" type="file" desc="Fresh-checkout analysis — the entry point of every session in a new clone (this file)." />
+          <file name="design-review.xml" type="file" desc="Proposal gate against the project invariants, before coding." />
+          <file name="verify-change.xml" type="file" desc="Post-change verification gate + residual-risk report." />
         </files>
       </directory>
-      <directory name="test" type="directory" desc="PLANNED. Prompts that analyze distro package test runs; will arrive as rocm-distro-containers test content migrates in (mirrors test/ and mock/ in the fedora-pi-prompts corpus)."/>
+      <directory name="test" type="directory" desc="PLANNED. Prompts that analyze distro package test runs; will arrive as rocm-distro-containers test content migrates in (mirrors test/ and mock/ in the fedora-pi-prompts corpus)." />
     </directory>
   </structure>
 
   <related-repositories>
-    <repository name="rocm-distro-containers" location="~/rocm/rocm-distro-containers" desc="The manual test suite this project automates. Per-distro layout: distro/release/package/test. Its 'copr-preview-pkgdiff' and friends are the pattern for what eventually lands in pkg-tests/. Prompts used to run those tests live in ~/ai/fedora-pi-prompts (test/, mock/, fedora-review/) &#x2014; they are being migrated into this repository's prompts/test/ as test content is migrated."/>
-    <repository name="fedora-pi-prompts" location="~/ai/fedora-pi-prompts" desc="Upstream prompt corpus for pi; the XML style of this file derives directly from that corpus."/>
+    <repository name="rocm-distro-containers" location="~/rocm/rocm-distro-containers" desc="The manual test suite this project automates. Per-distro layout: distro/release/package/test. Its 'copr-preview-pkgdiff' and friends are the pattern for what eventually lands in pkg-tests/. Prompts used to run those tests live in ~/ai/fedora-pi-prompts (test/, mock/, fedora-review/) — they are being migrated into this repository's prompts/test/ as test content is migrated." />
+    <repository name="fedora-pi-prompts" location="~/ai/fedora-pi-prompts" desc="Upstream prompt corpus for pi; the XML style of this file derives directly from that corpus." />
   </related-repositories>
 
   <environment>
@@ -246,11 +243,11 @@
     with Ollama). Nothing here talks to external LLM services.
 
     Network landmarks (do not renumber):
-    - rocm-builder:5000 &#x2014; test-tier registry (all testers trust)
-    - rocm-builder:5001 &#x2014; infra-tier registry (builder/db roles only)
-    - state:8443 &#x2014; planned state-svc (PLAN section 7.3, not yet built)
-    - rocm-builder:5432 / host 5002 &#x2014; postgres / dashboard
-    - /rocm-builder, /rocm-db &#x2014; dedicated storage roots per role
+    - rocm-builder:5000 — test-tier registry (all testers trust)
+    - rocm-builder:5001 — infra-tier registry (builder/db roles only)
+    - state:8443 — planned state-svc (PLAN section 7.3, not yet built)
+    - rocm-builder:5432 / host 5002 — postgres / dashboard
+    - /rocm-builder, /rocm-db — dedicated storage roots per role
   </environment>
 
 </directory>

@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""query_results.py (SECTION 7.7: Dashboard as SQL Projection)
-Simulates a read-only dashboard querying the State Store."""
+"""
+query_results.py (SECTION 7.7: Dashboard as SQL Projection)
 
-"""query_results.py (SECTION 7.7: Dashboard as SQL Projection)
-
-Simulates a read-only dashboard querying the State Store broker. It demonstrates
-how the UI remains lightweight by only receiving metadata pointers (SHA-256s), not
-the heavy test logs themselves.
+Simulates a read-only dashboard querying the State Store broker.
 """
 
 import sys

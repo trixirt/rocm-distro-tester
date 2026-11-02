@@ -1,10 +1,10 @@
-# Code Quality & Linter Enforcement
+# Code Quality & Linter Enforcement (Agent Infrastructure)
 
 ## 🧠 Mental Model: "Ship it Clean"
-Before generating, modifying, or committing code in this monorepo, ensure the output adheres to the strict linting and formatting rules defined by `Black`, `SQLFluff`, and `Hadolint`. 
+Before generating, modifying, or committing code, ensure the output adheres to these linter rules. 
 
 ## 1. Python & SQL Rules (The Primary Workflow)
-**Primary Linters:** `Black` (Formatter), `Python-SQLFluff` (SQL Formatter)  
+**Primary Linters:** `Black` (Formatter), `Python-SQLFluff` (SQL Formatter). 
 **Command:** `black . && sqlfluff fix --dialect postgres --rules all --ignore RF04`
 
 ### 🛠️ Mandatory Checks before "I'm done":
@@ -22,3 +22,10 @@ If I modify `Dockerfile` files, I must run them through **Hadolint**.
 ### 🛠️ Mandatory Docker Checks:
 1.  **Pin Versions**: Use `DL3013`. Never use bare `pip install <package>`.
 2.  **No Cache**: Use `DL3042`. Always append `--no-cache-dir` to pip/rpm installs.
+
+## 3. XML Prompt Rules (When applicable)
+All `.xml` files (especially your agent prompts) must be strictly well-formed and valid.
+
+### 🛠️ Mandatory Checks:
+- **Linting:** Run `xmllint --noout <file>.xml`. Any parser error here is a blocker for AI ingestion!
+- **Recovery:** If a file is malformed, run `xmllint --recover` to fix it before committing.

@@ -8,7 +8,6 @@ Simulates a GPU testing node writing test results back to the central State Stor
 import sys
 import hashlib
 import os
-from datetime import datetime
 import psycopg2
 
 if __name__ == "__main__":

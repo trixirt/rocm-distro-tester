@@ -78,7 +78,9 @@
   </instruction>
 <instruction>    Apply strict XML validation to all `.xml` prompt files using `xmllint`:
     - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
-    - Use `xmllint --recover` immediately if a file fails validation to repair malformed tags before committing!</instruction></instructions>
+    - Use `xmllint --recover` immediately if a file fails validation to repair malformed tags before committing!</instruction><instruction>    Apply strict XML validation to all `.xml` prompt files before committing. Ensure no parser errors exist:
+    - Run `xmllint --noout &lt;file&gt;.xml` on every modified file.
+    - Use `xmllint --recover` immediately if validation fails.</instruction></instructions>
 
 <project-context>
 

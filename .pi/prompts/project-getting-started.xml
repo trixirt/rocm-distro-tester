@@ -1,0 +1,18 @@
+# Project Context: ROCm Distro Tester
+
+## 🧠 Mental Model
+This is a **ROCm State Stack simulation** environment. We test package updates, Mock builds for Fedora Rawhide, and Docker mount diagnostics. 
+My goal is to ensure the "state" (database versions) matches reality (Mock build results).
+
+## 🛠️ Tech Stack & Environment
+- **Core**: Python 3.x, SQLFluff (Postgres dialect), Black (80-char limit).
+- **Builds**: Mock builds for `python-sqlfluff` and other deps (remember to add `tblib` as BuildRequire).
+- **Docker**: Container communication between "db-server" and "poller".
+
+## 🧪 Known Linters & Skills
+1.  **SQL Flaw**: Always lint schemas with SQLFluff using the `postgres` dialect. Pin versions strictly using Hadolint (DL3013).
+2.  **Python**: Use Flake8 and Black for all `.py` files. Fix missing docstrings (`C0114`) immediately.
+
+## 🐳 Docker & Mock Notes
+- When creating Dockerfiles, always `pip install -r requirements.txt --no-cache-dir`.
+- Always check UID/GID mount permissions using the provided `verify_docker_mount_test.sh`.
